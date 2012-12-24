@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+readonly distro='lenny'
+readonly packages='ifupdown,locales,vim,libui-dialog-perl,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
+readonly architectures=( i386 amd64 )
+
+init() {
+	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
+	for dir in ${HOME}/.ssh ${HOME}/Downloads ${HOME}/lxc; do
+		[ -d ${dir} ] || mkdir ${dir}
+	done
+	ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/id_rsa
+	sudo ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa
+	sudo ln -s ${DEVENV_HOME}/bin/lxcssh /usr/bin/lxcssh
+}
+
+bridge_wireless() {
+	sudo bash -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
+	if [ `grep -c -E '^net.ipv4.ip_forward=1' /etc/sysctl.conf` -gt 0 ]; then
+		echo "** ip_forward entry already exists in /etc/sysctl.conf!"
+	else
+		sudo bash -c "echo net.ipv4.ip_forward=1 >> /etc/sysctl.conf"
+	fi
+	if [ `ifconfig wlan0 2>&1 | grep -c error` -eq 0 ]; then
+		sudo /sbin/iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+	fi
+}
+
+deploy_lxc_impl() {
+	init
+
+	for arch in ${architectures[@]}; do
+		local hostname="${distro}-${arch}"
+		local rootfs="${HOME}/lxc/${hostname}"
+		local hwaddr="00:FF:FF:FF:FF:${arch: -2:2}"
+		if [ ! -d "${rootfs}" ]; then
+			if [ ! -f ${HOME}/Downloads/${hostname}.tgz ]; then
+				debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --make-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} `mktemp -d` http://archive.debian.org/debian
+			fi
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --unpack-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} ${rootfs} http://archive.debian.org/debian
+			for dir in {,${rootfs}}/home/${USER}-${hostname}; do
+				sudo mkdir -p ${dir}
+				sudo chown -R ${USER}:${USER} ${dir}
+			done
+			# user keys
+			mkdir -p /home/${USER}-${hostname}/.ssh
+			cp ${HOME}/.ssh/id_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
+			# root keys
+			sudo mkdir -p ${rootfs}/root/.ssh
+			sudo cp /root/.ssh/id_rsa.pub ${rootfs}/root/.ssh/authorized_keys
+			sudo bash -c "cat >/etc/lxc/${hostname}.conf <<EOF
+lxc.tty = 4
+lxc.pts = 1024
+lxc.utsname = ${hostname}
+lxc.rootfs = ${rootfs}
+lxc.cgroup.devices.deny = a
+lxc.cgroup.devices.allow = c 1:3 rwm
+lxc.cgroup.devices.allow = c 1:5 rwm
+lxc.cgroup.devices.allow = c 5:1 rwm
+lxc.cgroup.devices.allow = c 5:0 rwm
+lxc.cgroup.devices.allow = c 4:0 rwm
+lxc.cgroup.devices.allow = c 4:1 rwm
+lxc.cgroup.devices.allow = c 1:9 rwm
+lxc.cgroup.devices.allow = c 1:8 rwm
+lxc.cgroup.devices.allow = c 136:* rwm
+lxc.cgroup.devices.allow = c 5:2 rwm
+lxc.cgroup.devices.allow = c 254:0 rwm
+lxc.mount.entry=proc ${rootfs}/proc proc nodev,noexec,nosuid 0 0
+lxc.mount.entry=devpts ${rootfs}/dev/pts devpts defaults 0 0
+lxc.mount.entry=sysfs ${rootfs}/sys sysfs defaults 0 0
+lxc.mount.entry=${rootfs}/home/${USER}-${hostname} /home/${USER}-${hostname} none rbind 0 0
+lxc.network.type = veth
+lxc.network.flags = up
+lxc.network.link = lxcbr0
+lxc.network.name = eth0
+lxc.network.ipv4 = 10.0.3.${arch: -2:2}
+lxc.network.hwaddr = ${hwaddr}
+EOF"
+			sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
+			sudo bash -c "echo ${hostname} > ${rootfs}/etc/hostname"
+			sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
+			sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+EOF"
+			sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
+			sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
+			sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
+			sleep 15 # lolwut
+			sudo lxcssh ${hostname} "useradd -r -s /bin/bash -d /home/${USER}-${hostname} -U ${USER}"
+			# lxcssh ${hostname} "echo > /dev/null" # buggy - still does not read pubkey properly :(
+		else
+			echo "## Directory ${rootfs} already exist!"
+		fi
+	done
+
+	bridge_wireless
+}
+
+deploy_lxc_impl

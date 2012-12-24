@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+lxcssh_impl() {
+	local hostnames=( `ls /etc/lxc/*.conf | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
+	local i=0
+
+	declare -A hosts
+	declare -A items
+
+	for host in ${hostnames[@]}; do
+		local hwaddr=`cat /etc/lxc/${host}.conf | grep hwaddr | sed -e 's/lxc\.network\.hwaddr\ =\ \(.*\)/\1/' | tr '[A-Z]' '[a-z]'`
+		local ip=`cat /var/lib/misc/dnsmasq.leases  | grep ${hwaddr} | cut -d ' ' -f 3`
+		hosts[${host}]=${ip}
+		items[${i}]=${host}
+		let i++
+	done
+
+	if [ $i -eq 0 ]; then
+		echo "lxcssh: No container found!"
+		exit 1
+	fi
+
+	local options=( )
+	local dest_ip=
+
+	for i in ${!items[@]}; do
+		host=${items[$i]}
+		ip=${hosts[$host]}
+		options+=( "\n[${i}] HOST: ${host} IP: ${ip}" )
+		if [ ! -z "${1}" ] && ([ "${1}" = "${i}" ] || [ "${1}" = "${host}" ]); then
+			dest_ip=${ip}
+		fi
+	done
+
+	if [ -z "${dest_ip}" ]; then
+		list="${options[@]}"
+		echo -e ${list:2}
+		exit 1
+	fi
+
+	ssh -oStrictHostKeyChecking=no -l `whoami` ${dest_ip} "${*:2}"
+}
+
+lxcssh_impl ${*}
