@@ -9,8 +9,8 @@ init() {
 	for dir in ${HOME}/.ssh ${HOME}/Downloads ${HOME}/lxc; do
 		[ -d ${dir} ] || mkdir ${dir}
 	done
-	ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/id_rsa
-	sudo ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa
+	test -f ${HOME}/.ssh/id_rsa || ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/id_rsa
+	sudo test -f /root/.ssh/id_rsa || sudo ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa
 	sudo ln -s ${DEVENV_HOME}/bin/lxcssh /usr/bin/lxcssh
 }
 
@@ -28,6 +28,8 @@ bridge_wireless() {
 
 deploy_lxc_impl() {
 	init
+
+	local vms=
 
 	for arch in ${architectures[@]}; do
 		local hostname="${distro}-${arch}"
@@ -76,6 +78,7 @@ lxc.network.name = eth0
 lxc.network.ipv4 = 10.0.3.${arch: -2:2}
 lxc.network.hwaddr = ${hwaddr}
 EOF"
+			sudo ln -s /etc/lxc/${hostname}.conf /etc/lxc/auto/${hostname}.conf
 			sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
 			sudo bash -c "echo ${hostname} > ${rootfs}/etc/hostname"
 			sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
@@ -91,11 +94,19 @@ EOF"
 			sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
 			sleep 15 # lolwut
 			sudo lxcssh ${hostname} "useradd -r -s /bin/bash -d /home/${USER}-${hostname} -U ${USER}"
-			# lxcssh ${hostname} "echo > /dev/null" # buggy - still does not read pubkey properly :(
+			vms="${vms} ${hostname}"
 		else
 			echo "## Directory ${rootfs} already exist!"
 		fi
 	done
+
+	if [ `grep -c "${vms}" /etc/default/lxc` -eq 0 ]; then
+		sudo bash -c "cat >>/etc/default/lxc <<EOF
+RUN=yes
+CONF_DIR=/etc/lxc
+CONTAINERS=\"${vms}\"
+EOF"
+	fi
 
 	bridge_wireless
 }
