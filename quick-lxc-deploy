@@ -2,11 +2,33 @@
 
 src=$(cd $(dirname ${0}); pwd)
 
-readonly distro='lenny'
 readonly packages='ifupdown,less,locales,vim,libui-dialog-perl,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
-readonly architectures=( i386 amd64 )
+#readonly mirror='http://ftp.debian.org/debian'
+readonly mirror='http://archive.debian.org/debian'
+
+distro=
+arch=
+
+die_usage() {
+	echo "usage: quick-lxc-deploy <debian version> <architecture> [<mirror>]"
+	echo "example: quick-lxc-deploy etch i386"
+	exit 1
+}
 
 init() {
+	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
+	local i=5
+	distro=${1}
+	arch=${2}
+	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${HOME}/lxc/${distro}-${arch}"
+	echo -n "-- To cancel press CTRL+C in"
+	while [ ${i} -ge 0 ]; do
+		echo -n " ${i}"
+		let i--
+		sleep 1
+	done
+	echo
+
 	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 	for dir in ${HOME}/.ssh ${HOME}/Downloads ${HOME}/lxc; do
 		[ -d ${dir} ] || mkdir ${dir}
@@ -34,34 +56,31 @@ bridge_wireless() {
 }
 
 deploy_lxc_impl() {
-	init
+	init ${*}
 
-	local vms=
-
-	for arch in ${architectures[@]}; do
-		local hostname="${distro}-${arch}"
-		local rootfs="${HOME}/lxc/${hostname}"
-		local hwaddr="00:FF:FF:FF:FF:${arch: -2:2}"
-		if [ ! -d "${rootfs}" ]; then
-			if [ ! -f ${HOME}/Downloads/${hostname}.tgz ]; then
-				debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --make-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} `mktemp -d` http://archive.debian.org/debian
-			fi
-			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --unpack-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} ${rootfs} http://archive.debian.org/debian
-			for dir in {,${rootfs}}/home/${USER}-${hostname}; do
-				sudo mkdir -p ${dir}
-				sudo chown -R ${USER}:${USER} ${dir}
-			done
-			# user keys
-			mkdir -p /home/${USER}-${hostname}/.ssh
-			cp ${HOME}/.ssh/lxc_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
-			chmod 700 /home/${USER}-${hostname}/.ssh
-			chmod 600 /home/${USER}-${hostname}/.ssh/authorized_keys
-			# root keys
-			sudo mkdir -p ${rootfs}/root/.ssh
-			sudo cp /root/.ssh/lxc_rsa.pub ${rootfs}/root/.ssh/authorized_keys
-			sudo chmod 700 ${rootfs}/root/.ssh
-			sudo chmod 600 ${rootfs}/root/.ssh/authorized_keys
-			sudo bash -c "cat >/etc/lxc/${hostname}.conf <<EOF
+	local hostname="${distro}-${arch}"
+	local rootfs="${HOME}/lxc/${hostname}"
+	local hwaddr="00:FF:FF:FF:FF:${arch: -2:2}"
+	if [ ! -d "${rootfs}" ]; then
+		if [ ! -f ${HOME}/Downloads/${hostname}.tgz ]; then
+			debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --make-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} `mktemp -d` ${mirror} || exit 1
+		fi
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --unpack-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} ${rootfs} ${mirror} || exit 1
+		for dir in {,${rootfs}}/home/${USER}-${hostname}; do
+			sudo mkdir -p ${dir}
+			sudo chown -R ${USER}:${USER} ${dir}
+		done
+		# user keys
+		mkdir -p /home/${USER}-${hostname}/.ssh
+		cp ${HOME}/.ssh/lxc_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
+		chmod 700 /home/${USER}-${hostname}/.ssh
+		chmod 600 /home/${USER}-${hostname}/.ssh/authorized_keys
+		# root keys
+		sudo mkdir -p ${rootfs}/root/.ssh
+		sudo cp /root/.ssh/lxc_rsa.pub ${rootfs}/root/.ssh/authorized_keys
+		sudo chmod 700 ${rootfs}/root/.ssh
+		sudo chmod 600 ${rootfs}/root/.ssh/authorized_keys
+		sudo bash -c "cat >/etc/lxc/${hostname}.conf <<EOF
 lxc.tty = 4
 lxc.pts = 1024
 lxc.utsname = ${hostname}
@@ -89,38 +108,44 @@ lxc.network.name = eth0
 lxc.network.ipv4 = 10.0.3.${arch: -2:2}
 lxc.network.hwaddr = ${hwaddr}
 EOF"
-			sudo ln -s /etc/lxc/${hostname}.conf /etc/lxc/auto/${hostname}.conf
-			sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
-			sudo bash -c "echo ${hostname} > ${rootfs}/etc/hostname"
-			sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
-			sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
+		sudo ln -s /etc/lxc/${hostname}.conf /etc/lxc/auto/${hostname}.conf
+		sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
+		sudo bash -c "echo ${hostname} > ${rootfs}/etc/hostname"
+		sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
+		sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
 auto lo
 iface lo inet loopback
 
 auto eth0
 iface eth0 inet dhcp
 EOF"
-			sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
-			sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
-			sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
-			sleep 15 # lolwut
-			local uid=`id -u ${USER}`
-			sudo ${src}/lxcssh ${hostname} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER}-${hostname} -g ${uid} -u ${uid} ${USER}"
-			vms+=" ${hostname}"
-		else
-			echo "## Directory ${rootfs} already exist!"
-		fi
-	done
+		sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
+		sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
+		sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
+		sleep 15 # lolwut
+		local uid=`id -u ${USER}`
+		sudo ${src}/lxcssh ${hostname} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER}-${hostname} -g ${uid} -u ${uid} ${USER}"
+	else
+		echo "## Directory ${rootfs} already exist!"
+	fi
 
-	if [ `grep -c "${vms}" /etc/default/lxc` -eq 0 ]; then
+	if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
 		sudo bash -c "cat >>/etc/default/lxc <<EOF
 RUN=yes
+EOF"
+	fi
+	if [ `grep -cE '^CONF_DIR' /etc/default/lxc` -eq 0 ]; then
+		sudo bash -c "cat >>/etc/default/lxc <<EOF
 CONF_DIR=/etc/lxc
-CONTAINERS=\"${vms}\"
 EOF"
 	fi
 
 	bridge_wireless
+
+	echo "-- Container rootfs: ${HOME}/lxc/${distro}-${arch}"
+	echo "-- Container packages tarball: ${HOME}/Downloads/${ditro}-${arch}.tgz"
+	echo "-- Container's user home directory: ${HOME}/${USER}-${distro}-${arch}"
+	echo "-- For start at boot add ${distro}-${arch} to CONTAINER list in /etc/default/lxc"
 }
 
-deploy_lxc_impl
+deploy_lxc_impl ${*}
