@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
+src=$(cd $(dirname ${0}); pwd)
+
 readonly distro='lenny'
-readonly packages='ifupdown,locales,vim,libui-dialog-perl,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
+readonly packages='ifupdown,less,locales,vim,libui-dialog-perl,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
 readonly architectures=( i386 amd64 )
 
 init() {
@@ -9,9 +11,14 @@ init() {
 	for dir in ${HOME}/.ssh ${HOME}/Downloads ${HOME}/lxc; do
 		[ -d ${dir} ] || mkdir ${dir}
 	done
-	test -f ${HOME}/.ssh/id_rsa || ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/id_rsa
-	sudo test -f /root/.ssh/id_rsa || sudo ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa
-	sudo ln -s ${DEVENV_HOME}/bin/lxcssh /usr/bin/lxcssh
+	if test ! -f ${HOME}/.ssh/lxc_rsa; then
+		ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/lxc_rsa
+		ssh-add ${HOME}/.ssh/lxc_rsa
+	fi
+	if sudo test ! -f /root/.ssh/lxc_rsa; then
+		sudo ssh-keygen -t rsa -N "" -f /root/.ssh/lxc_rsa
+		sudo ssh-add /root/.ssh/lxc_rsa
+	fi
 }
 
 bridge_wireless() {
@@ -46,10 +53,14 @@ deploy_lxc_impl() {
 			done
 			# user keys
 			mkdir -p /home/${USER}-${hostname}/.ssh
-			cp ${HOME}/.ssh/id_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
+			cp ${HOME}/.ssh/lxc_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
+			chmod 700 /home/${USER}-${hostname}/.ssh
+			chmod 600 /home/${USER}-${hostname}/.ssh/authorized_keys
 			# root keys
 			sudo mkdir -p ${rootfs}/root/.ssh
-			sudo cp /root/.ssh/id_rsa.pub ${rootfs}/root/.ssh/authorized_keys
+			sudo cp /root/.ssh/lxc_rsa.pub ${rootfs}/root/.ssh/authorized_keys
+			sudo chmod 700 ${rootfs}/root/.ssh
+			sudo chmod 600 ${rootfs}/root/.ssh/authorized_keys
 			sudo bash -c "cat >/etc/lxc/${hostname}.conf <<EOF
 lxc.tty = 4
 lxc.pts = 1024
@@ -70,7 +81,7 @@ lxc.cgroup.devices.allow = c 254:0 rwm
 lxc.mount.entry=proc ${rootfs}/proc proc nodev,noexec,nosuid 0 0
 lxc.mount.entry=devpts ${rootfs}/dev/pts devpts defaults 0 0
 lxc.mount.entry=sysfs ${rootfs}/sys sysfs defaults 0 0
-lxc.mount.entry=${rootfs}/home/${USER}-${hostname} /home/${USER}-${hostname} none rbind 0 0
+lxc.mount.entry=/home/${USER}-${hostname} ${rootfs}/home/${USER}-${hostname} none rbind 0 0
 lxc.network.type = veth
 lxc.network.flags = up
 lxc.network.link = lxcbr0
@@ -93,8 +104,9 @@ EOF"
 			sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
 			sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
 			sleep 15 # lolwut
-			sudo lxcssh ${hostname} "useradd -r -s /bin/bash -d /home/${USER}-${hostname} -U ${USER}"
-			vms="${vms} ${hostname}"
+			local uid=`id -u ${USER}`
+			sudo ${src}/lxcssh ${hostname} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER}-${hostname} -g ${uid} -u ${uid} ${USER}"
+			vms+=" ${hostname}"
 		else
 			echo "## Directory ${rootfs} already exist!"
 		fi

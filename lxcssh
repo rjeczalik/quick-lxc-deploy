@@ -3,33 +3,35 @@
 lxcssh_impl() {
 	local hostnames=( `ls /etc/lxc/*.conf | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
 	local i=0
+	local running="`lxc-ls`"
 
 	declare -A hosts
 	declare -A items
 
 	for host in ${hostnames[@]}; do
-		local hwaddr=`cat /etc/lxc/${host}.conf | grep hwaddr | sed -e 's/lxc\.network\.hwaddr\ =\ \(.*\)/\1/' | tr '[A-Z]' '[a-z]'`
-		local ip=`cat /var/lib/misc/dnsmasq.leases  | grep "${hwaddr}" | cut -d ' ' -f 3`
-		if [ ! -z "${hwaddr}" ] && [ ! -z "${ip}" ]; then
-			hosts[${host}]=${ip}
-			items[${i}]=${host}
-			let i++
+		if [ `echo ${running} | grep -c ${host}` -ge 1 ]; then
+			local hwaddr=`cat /etc/lxc/${host}.conf | grep hwaddr | sed -e 's/lxc\.network\.hwaddr\ =\ \(.*\)/\1/' | tr '[A-Z]' '[a-z]'`
+			local ip=`cat /var/lib/misc/dnsmasq.leases  | grep "${hwaddr}" | cut -d ' ' -f 3`
+			if [ ! -z "${hwaddr}" ] && [ ! -z "${ip}" ]; then
+				hosts[${host}]=${ip}
+				items[${i}]=${host}
+				let i++
+			fi
 		fi
 	done
 
-	if [ $i -eq 0 ]; then
-		echo "lxcssh: No container found!"
+	if [ ${i} -eq 0 ]; then
+		echo "lxcssh: No running container found!"
 		exit 1
 	fi
 
-	local options=( )
+	local options=
 	local dest_ip=
 
-	for i in ${!items[@]}; do
-		host=${items[$i]}
-		ip=${hosts[$host]}
-		options+=( "\n[${i}] ${host} (${ip})" )
-		if [ ! -z "${1}" ] && ([ "${1}" = "${i}" ] || [ "${1}" = "${host}" ]); then
+	for item in ${!items[@]}; do
+		ip=${hosts[${items[${item}]}]}
+		options+="\n[${item}] ${items[${item}]} (${ip})"
+		if [ ! -z "${1}" ] && ([ "${1}" = "${item}" ] || [ "${1}" = "${items[${item}]}" ]); then
 			dest_ip=${ip}
 		fi
 	done
@@ -40,7 +42,9 @@ lxcssh_impl() {
 		exit 1
 	fi
 
-	ssh -oStrictHostKeyChecking=no -l `whoami` ${dest_ip} "${*:2}"
+	local login=`whoami`
+
+	ssh -oStrictHostKeyChecking=no -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
 }
 
 lxcssh_impl ${*}
