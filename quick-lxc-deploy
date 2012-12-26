@@ -60,7 +60,7 @@ deploy_lxc_impl() {
 
 	local hostname="${distro}-${arch}"
 	local rootfs="${HOME}/lxc/${hostname}"
-	local hwaddr="00:FF:FF:FF:FF:${arch: -2:2}"
+	local hwaddr="00`echo ${hostname} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
 	if [ ! -d "${rootfs}" ]; then
 		if [ ! -f ${HOME}/Downloads/${hostname}.tgz ]; then
 			debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --make-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} `mktemp -d` ${mirror} || exit 1
