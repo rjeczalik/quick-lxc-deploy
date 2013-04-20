@@ -81,11 +81,15 @@ main() {
 	local rootfs="${DEPLOY_DIR}/${hostname}"
 	local hwaddr="00`echo ${hostname} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
 
+	if ! dpkg-query -W debootstrap | perl -ne '/^debootstrap\s+1.*$/ && exit 1'; then
+		local OPT_SEP='='
+	fi
+
 	if [ ! -d "${rootfs}" ]; then
 		if [ ! -f ${CACHE_DIR}/${hostname}.tgz ]; then
-			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball ${CACHE_DIR}/${hostname}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball${OPT_SEP}${CACHE_DIR}/${hostname}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
 		fi
-		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball ${CACHE_DIR}/${hostname}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball${OPT_SEP}${CACHE_DIR}/${hostname}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
 		for dir in {,${rootfs}}/home/${USER}-${hostname}; do
 			sudo mkdir -p ${dir}
 			sudo chown -R ${USER}:${USER} ${dir}
