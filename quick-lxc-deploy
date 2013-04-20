@@ -2,17 +2,35 @@
 
 src=$(cd $(dirname ${0}); pwd)
 
-readonly packages='ifupdown,less,locales,vim,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
-#readonly mirror='http://ftp.debian.org/debian'
-readonly mirror='http://archive.debian.org/debian'
-
 distro=
 arch=
 
 die_usage() {
-	echo "usage: quick-lxc-deploy <debian version> <architecture> [<mirror>]"
+	echo "usage: quick-lxc-deploy <debian version> <architecture>"
 	echo "example: quick-lxc-deploy etch i386"
 	exit 1
+}
+
+load_config() {
+	for c in {/etc/,~/,${src}/}.quick-lxc-deploy.conf; do
+		if [ -f "${c}" ]; then
+			source "${c}"
+			if [ ! -z "${PACKAGES}" ] && [ ! -z "${MIRROR}" ] &&
+				[ ! -z "${CACHE_DIR}" ] && [ ! -z "${DEPLOY_DIR}" ]; then
+				for d in "${CACHE_DIR}" "${DEPLOY_DIR}"; do
+					if [ ! -d "${d}" ]; then
+						if mkdir -p ${d} 2>/dev/null; then
+							echo "## ${d}: failed to create!"
+							exit 1
+						fi
+					fi
+				done
+			else
+				echo "## ${c}: invalid configuration file!"
+				exit 1
+			fi
+		fi
+	done
 }
 
 init() {
@@ -20,7 +38,7 @@ init() {
 	local i=5
 	distro=${1}
 	arch=${2}
-	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${HOME}/lxc/${distro}-${arch}"
+	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${distro}-${arch}"
 	echo -n "-- To cancel press CTRL+C in"
 	while [ ${i} -ge 0 ]; do
 		echo -n " ${i}"
@@ -30,8 +48,8 @@ init() {
 	echo
 
 	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
-	for dir in ${HOME}/.ssh ${HOME}/Downloads ${HOME}/lxc; do
-		[ -d ${dir} ] || mkdir ${dir}
+	for dir in ${HOME}/.ssh ; do
+		[ -d ${dir} ] || mkdir -p ${dir}
 	done
 	if test ! -f ${HOME}/.ssh/lxc_rsa; then
 		ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/lxc_rsa
@@ -56,16 +74,18 @@ bridge_wireless() {
 }
 
 main() {
+	load_config
 	init ${*}
 
 	local hostname="${distro}-${arch}"
-	local rootfs="${HOME}/lxc/${hostname}"
+	local rootfs="${DEPLOY_DIR}/${hostname}"
 	local hwaddr="00`echo ${hostname} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
+
 	if [ ! -d "${rootfs}" ]; then
-		if [ ! -f ${HOME}/Downloads/${hostname}.tgz ]; then
-			debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --make-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} `mktemp -d` ${mirror} || exit 1
+		if [ ! -f ${CACHE_DIR}/${hostname}.tgz ]; then
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball ${CACHE_DIR}/${hostname}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
 		fi
-		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include ${packages} --unpack-tarball ${HOME}/Downloads/${hostname}.tgz ${distro} ${rootfs} ${mirror} || exit 1
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball ${CACHE_DIR}/${hostname}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
 		for dir in {,${rootfs}}/home/${USER}-${hostname}; do
 			sudo mkdir -p ${dir}
 			sudo chown -R ${USER}:${USER} ${dir}
@@ -128,7 +148,7 @@ EOF"
 	else
 		echo "## Directory ${rootfs} already exist!"
 	fi
-
+exit 0
 	if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
 		sudo bash -c "cat >>/etc/default/lxc <<EOF
 RUN=yes
@@ -143,7 +163,7 @@ EOF"
 	bridge_wireless
 
 	echo "-- Container rootfs: ${HOME}/lxc/${distro}-${arch}"
-	echo "-- Container packages tarball: ${HOME}/Downloads/${ditro}-${arch}.tgz"
+	echo "-- Container packages tarball: ${CACHE_DIR}/${ditro}-${arch}.tgz"
 	echo "-- Container's user home directory: ${HOME}/${USER}-${distro}-${arch}"
 	echo "-- For start at boot add ${distro}-${arch} to CONTAINER list in /etc/default/lxc"
 }
