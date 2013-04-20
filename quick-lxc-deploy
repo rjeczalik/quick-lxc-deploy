@@ -2,7 +2,7 @@
 
 src=$(cd $(dirname ${0}); pwd)
 
-readonly packages='ifupdown,less,locales,vim,libui-dialog-perl,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
+readonly packages='ifupdown,less,locales,vim,dialog,dhcp3-client,netbase,net-tools,iproute,openssh-server'
 #readonly mirror='http://ftp.debian.org/debian'
 readonly mirror='http://archive.debian.org/debian'
 
