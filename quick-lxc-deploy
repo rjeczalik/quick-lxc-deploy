@@ -55,7 +55,7 @@ bridge_wireless() {
 	fi
 }
 
-deploy_lxc_impl() {
+main() {
 	init ${*}
 
 	local hostname="${distro}-${arch}"
@@ -148,4 +148,4 @@ EOF"
 	echo "-- For start at boot add ${distro}-${arch} to CONTAINER list in /etc/default/lxc"
 }
 
-deploy_lxc_impl ${*}
+main ${*}

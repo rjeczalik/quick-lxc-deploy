@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-lxcssh_impl() {
+main() {
 	local hostnames=( `ls /etc/lxc/*.conf | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
 	local running_hosts=( `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"'` )
 	local i=0
@@ -47,4 +47,4 @@ lxcssh_impl() {
 	ssh -oStrictHostKeyChecking=no -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
 }
 
-lxcssh_impl ${*}
+main ${*}
