@@ -5,15 +5,23 @@ Couple of bash scripts hacked together for quick deploying/accessing LXC contain
 
 ### Deploying a container
 
-Usage: quick-lxc-deploy &lt;debian version&gt; &lt;architecture&gt; [&lt;mirror&gt;]
+Usage: quick-lxc-deploy &lt;debian version&gt; &lt;architecture&gt; [&lt;container name&gt;]
 
 quick-lxc-deploy takes care of:
 
-* fetching predefined set of packages and packing them into tarball in your ${HOME}/Downloads directory
-* installing new container in ${HOME}/lxc directory
-* creating SSH key files in ${HOME}/.ssh/lxc_rsa for root and current user (for speed-dialing with lxcssh)
-* creating an account for current user on a target container with bind-mounting home directory from /home/${USER}-${container}
+* fetching predefined set of packages and packing them into tarball in your CACHE_DIR directory
+* installing new container in DEPLOY_DIR directory
+* creating SSH key files in ~/.ssh/lxc_rsa for root and current user (for speed-dialing with lxcssh)
+* creating an account for current user on a target container with rbind-mounting user's home directory
 
+Configuration file - ~/.quick-lxc-deploy.conf
+
+quick-lxc-deploy uses the following options:
+
+* PACKAGES - additional packages list to be included into container
+* MIRROR - mirror's url for debootstrap
+* CACHE_DIR - path to directory storing debootstrap's tarballs
+* DEPLOY_DIR - prefix path for container rootfs
 
 lxcssh
 ======
@@ -33,4 +41,3 @@ Typical lxcssh output:
 ```
 
 lxcssh connects to a container as current user - e.g. in order to login as root to squeeze-amd64 container call sudo lxcssh 2.
-
