@@ -44,7 +44,8 @@ main() {
 
 	local login=`whoami`
 
-	ssh -oStrictHostKeyChecking=no -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
+	ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
+	    -2 -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
 }
 
 main ${*}
