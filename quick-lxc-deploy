@@ -3,7 +3,7 @@
 src=$(cd $(dirname ${0}); pwd)
 
 die_usage() {
-	echo "usage: quick-lxc-deploy <debian version> <architecture>"
+	echo "usage: quick-lxc-deploy <debian version> <architecture> [<container name>]"
 	echo "example: quick-lxc-deploy etch i386"
 	exit 1
 }
@@ -16,7 +16,7 @@ load_config() {
 				[ ! -z "${CACHE_DIR}" ] && [ ! -z "${DEPLOY_DIR}" ]; then
 				for d in "${CACHE_DIR}" "${DEPLOY_DIR}"; do
 					if [ ! -d "${d}" ]; then
-						if mkdir -p ${d} 2>/dev/null; then
+						if ! mkdir -p ${d} 2>/dev/null; then
 							echo "## ${d}: failed to create!"
 							exit 1
 						fi
@@ -59,14 +59,16 @@ main() {
 	load_config
 	configure_keys
 
-	local distro=${1}
-	local arch=${2}
-	local hostname="${distro}-${arch}"
-	local rootfs="${DEPLOY_DIR}/${hostname}"
-	local hwaddr="00`echo ${hostname} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
+	local distro="${1}"
+	local arch="${2}"
+	local basename="${distro}-${arch}"
+	[ -z "${3}" ] && local containername=${basename} || local containername="${3}"
+	local rootfs="${DEPLOY_DIR}/${containername}"
+	local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
+	local opt_sep=' '
 
 	local i=5
-	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${distro}-${arch}"
+	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${containername}"
 	echo -n "-- To cancel press CTRL+C in"
 	while [ ${i} -ge 0 ]; do
 		echo -n " ${i}"
@@ -78,32 +80,32 @@ main() {
 	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 
 	if ! dpkg-query -W debootstrap | perl -ne '/^debootstrap\s+1.*$/ && exit 1'; then
-		local OPT_SEP='='
+		opt_sep='='
 	fi
 
 	if [ ! -d "${rootfs}" ]; then
-		if [ ! -f ${CACHE_DIR}/${hostname}.tgz ]; then
-			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball${OPT_SEP}${CACHE_DIR}/${hostname}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
+		if [ ! -f ${CACHE_DIR}/${basename}.tgz ]; then
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball${opt_sep}${CACHE_DIR}/${basename}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
 		fi
-		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball${OPT_SEP}${CACHE_DIR}/${hostname}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
-		for dir in {,${rootfs}}/home/${USER}-${hostname}; do
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball${opt_sep}${CACHE_DIR}/${basename}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
+		for dir in {,${rootfs}}/home/${USER}-${containername}; do
 			sudo mkdir -p ${dir}
 			sudo chown -R ${USER}:${USER} ${dir}
 		done
 		# user keys
-		mkdir -p /home/${USER}-${hostname}/.ssh
-		cp ${HOME}/.ssh/lxc_rsa.pub /home/${USER}-${hostname}/.ssh/authorized_keys
-		chmod 700 /home/${USER}-${hostname}/.ssh
-		chmod 600 /home/${USER}-${hostname}/.ssh/authorized_keys
+		mkdir -p /home/${USER}-${containername}/.ssh
+		cp ${HOME}/.ssh/lxc_rsa.pub /home/${USER}-${containername}/.ssh/authorized_keys
+		chmod 700 /home/${USER}-${containername}/.ssh
+		chmod 600 /home/${USER}-${containername}/.ssh/authorized_keys
 		# root keys
 		sudo mkdir -p ${rootfs}/root/.ssh
 		sudo cp /root/.ssh/lxc_rsa.pub ${rootfs}/root/.ssh/authorized_keys
 		sudo chmod 700 ${rootfs}/root/.ssh
 		sudo chmod 600 ${rootfs}/root/.ssh/authorized_keys
-		sudo bash -c "cat >/etc/lxc/${hostname}.conf <<EOF
+		sudo bash -c "cat >/etc/lxc/${containername}.conf <<EOF
 lxc.tty = 4
 lxc.pts = 1024
-lxc.utsname = ${hostname}
+lxc.utsname = ${containername}
 lxc.rootfs = ${rootfs}
 lxc.cgroup.devices.deny = a
 lxc.cgroup.devices.allow = c 1:3 rwm
@@ -120,17 +122,16 @@ lxc.cgroup.devices.allow = c 254:0 rwm
 lxc.mount.entry=proc ${rootfs}/proc proc nodev,noexec,nosuid 0 0
 lxc.mount.entry=devpts ${rootfs}/dev/pts devpts defaults 0 0
 lxc.mount.entry=sysfs ${rootfs}/sys sysfs defaults 0 0
-lxc.mount.entry=/home/${USER}-${hostname} ${rootfs}/home/${USER}-${hostname} none rbind 0 0
+lxc.mount.entry=/home/${USER}-${containername} ${rootfs}/home/${USER}-${containername} none rbind 0 0
 lxc.network.type = veth
 lxc.network.flags = up
 lxc.network.link = lxcbr0
 lxc.network.name = eth0
-lxc.network.ipv4 = 10.0.3.${arch: -2:2}
 lxc.network.hwaddr = ${hwaddr}
 EOF"
-		sudo ln -s /etc/lxc/${hostname}.conf /etc/lxc/auto/${hostname}.conf
+		sudo ln -s /etc/lxc/${containername}.conf /etc/lxc/auto/${containername}.conf
 		sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
-		sudo bash -c "echo ${hostname} > ${rootfs}/etc/hostname"
+		sudo bash -c "echo ${containername} > ${rootfs}/etc/hostname"
 		sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
 		sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
 auto lo
@@ -141,10 +142,10 @@ iface eth0 inet dhcp
 EOF"
 		sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
 		sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
-		sudo lxc-start -d -n ${hostname} -f /etc/lxc/${hostname}.conf
+		sudo lxc-start -d -n ${containername} -f /etc/lxc/${containername}.conf
 		sleep 15 # lolwut
 		local uid=`id -u ${USER}`
-		sudo ${src}/lxcssh ${hostname} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER}-${hostname} -g ${uid} -u ${uid} ${USER}"
+		sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER}-${containername} -g ${uid} -u ${uid} ${USER}"
 	else
 		echo "## Directory ${rootfs} already exist!"
 	fi
@@ -162,9 +163,9 @@ EOF"
 
 	bridge_wireless
 
-	echo "-- Container rootfs: ${HOME}/lxc/${distro}-${arch}"
-	echo "-- Container packages tarball: ${CACHE_DIR}/${ditro}-${arch}.tgz"
-	echo "-- Container's user home directory: ${HOME}/${USER}-${distro}-${arch}"
+	echo "-- Container rootfs: ${HOME}/lxc/${containername}"
+	echo "-- Container packages tarball: ${CACHE_DIR}/${containername}.tgz"
+	echo "-- Container's user home directory: ${HOME}/${USER}-${containername}"
 	echo "-- For start at boot add ${distro}-${arch} to CONTAINER list in /etc/default/lxc"
 }
 
