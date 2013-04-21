@@ -2,9 +2,6 @@
 
 src=$(cd $(dirname ${0}); pwd)
 
-distro=
-arch=
-
 die_usage() {
 	echo "usage: quick-lxc-deploy <debian version> <architecture>"
 	echo "example: quick-lxc-deploy etch i386"
@@ -33,24 +30,7 @@ load_config() {
 	done
 }
 
-init() {
-	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
-	local i=5
-	distro=${1}
-	arch=${2}
-	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${distro}-${arch}"
-	echo -n "-- To cancel press CTRL+C in"
-	while [ ${i} -ge 0 ]; do
-		echo -n " ${i}"
-		let i--
-		sleep 1
-	done
-	echo
-
-	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
-	for dir in ${HOME}/.ssh ; do
-		[ -d ${dir} ] || mkdir -p ${dir}
-	done
+configure_keys() {
 	if test ! -f ${HOME}/.ssh/lxc_rsa; then
 		ssh-keygen -t rsa -N "" -f ${HOME}/.ssh/lxc_rsa
 		ssh-add ${HOME}/.ssh/lxc_rsa
@@ -74,12 +54,28 @@ bridge_wireless() {
 }
 
 main() {
-	load_config
-	init ${*}
+	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
 
+	load_config
+	configure_keys
+
+	local distro=${1}
+	local arch=${2}
 	local hostname="${distro}-${arch}"
 	local rootfs="${DEPLOY_DIR}/${hostname}"
 	local hwaddr="00`echo ${hostname} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
+
+	local i=5
+	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${distro}-${arch}"
+	echo -n "-- To cancel press CTRL+C in"
+	while [ ${i} -ge 0 ]; do
+		echo -n " ${i}"
+		let i--
+		sleep 1
+	done
+	echo
+
+	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 
 	if ! dpkg-query -W debootstrap | perl -ne '/^debootstrap\s+1.*$/ && exit 1'; then
 		local OPT_SEP='='
@@ -152,7 +148,7 @@ EOF"
 	else
 		echo "## Directory ${rootfs} already exist!"
 	fi
-exit 0
+
 	if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
 		sudo bash -c "cat >>/etc/default/lxc <<EOF
 RUN=yes
