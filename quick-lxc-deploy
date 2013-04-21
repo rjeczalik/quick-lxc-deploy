@@ -68,6 +68,7 @@ main() {
 	local rootfs="${DEPLOY_DIR}/${containername}"
 	local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
 	local opt_sep=' '
+	local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
 
 	local i=5
 	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${containername}"
@@ -86,10 +87,10 @@ main() {
 	fi
 
 	if [ ! -d "${rootfs}" ]; then
-		if [ ! -f ${CACHE_DIR}/${basename}.tgz ]; then
-			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --make-tarball${opt_sep}${CACHE_DIR}/${basename}.tgz ${distro} `mktemp -d` ${MIRROR} || exit 1
+		if [ ! -f "${tarball}" ]; then
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${MIRROR} || exit 1
 		fi
-		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include=${PACKAGES} --unpack-tarball${opt_sep}${CACHE_DIR}/${basename}.tgz ${distro} ${rootfs} ${MIRROR} || exit 1
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${MIRROR} || exit 1
 		for dir in {,${rootfs}}/home/${USER}-${containername}; do
 			sudo mkdir -p ${dir}
 			sudo chown -R ${USER}:${USER} ${dir}
