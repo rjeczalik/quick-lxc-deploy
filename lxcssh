@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 main() {
+	local black="\E[0;90m"
+	local yellow="\E[0;93m"
+	local red="\E[0;91m"
+	local nocolor="\E[0m"
+
 	local hostnames=( `ls /etc/lxc/*.conf | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
 	local running_hosts=( `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"'` )
 	local i=0
@@ -21,24 +26,27 @@ main() {
 	done
 
 	if [ ${i} -eq 0 ]; then
-		echo "lxcssh: No running container found!"
+		echo "lxcssh: ${red}No running container found!${nocolor}"
 		exit 1
 	fi
 
-	local options=
+	local options=()
 	local dest_ip=
 
 	for item in ${!items[@]}; do
 		ip=${hosts[${items[${item}]}]}
-		options+="\n[${item}] ${items[${item}]} (${ip})"
+		options+=("${yellow}[${item}] ${nocolor}${items[${item}]} ${black}(${ip})${nocolor}")
 		if [ ! -z "${1}" ] && ([ "${1}" = "${item}" ] || [ "${1}" = "${items[${item}]}" ]); then
 			dest_ip=${ip}
 		fi
 	done
 
 	if [ -z "${dest_ip}" ]; then
-		local list="${options[@]}"
-		echo -e ${list:2}
+		echo
+		for o in ${!options[@]}; do
+			echo -e "  ${options[${o}]}"
+		done
+		echo
 		exit 1
 	fi
 
