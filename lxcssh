@@ -26,7 +26,7 @@ main() {
 	done
 
 	if [ ${i} -eq 0 ]; then
-		echo "lxcssh: ${red}No running container found!${nocolor}"
+		echo -e "lxcssh: ${red}No running container found!${nocolor}"
 		exit 1
 	fi
 

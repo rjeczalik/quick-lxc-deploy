@@ -2,9 +2,14 @@
 
 src=$(cd $(dirname ${0}); pwd)
 
+readonly black="\E[0;90m"
+readonly blue="\E[0;94m"
+readonly red="\E[0;91m"
+readonly nocolor="\E[0m"
+
 die_usage() {
-	echo "usage: quick-lxc-deploy <debian version> <architecture> [<container name>]"
-	echo "example: quick-lxc-deploy etch i386"
+	echo -e "usage: quick-lxc-deploy <debian version> <architecture> [<container name>]"
+	echo -e "example: quick-lxc-deploy etch i386"
 	exit 1
 }
 
@@ -12,18 +17,18 @@ load_config() {
 	for c in {/etc/,~/,${src}/}.quick-lxc-deploy.conf; do
 		if [ -f "${c}" ]; then
 			source "${c}"
-			if [ ! -z "${PACKAGES}" ] && [ ! -z "${MIRROR}" ] &&
-				[ ! -z "${CACHE_DIR}" ] && [ ! -z "${DEPLOY_DIR}" ]; then
+			if [ ! -z "${PACKAGES}" ] && [ ! -z "${CACHE_DIR}" ] &&
+				[ ! -z "${DEPLOY_DIR}" ]; then
 				for d in "${CACHE_DIR}" "${DEPLOY_DIR}"; do
 					if [ ! -d "${d}" ]; then
 						if ! mkdir -p ${d} 2>/dev/null; then
-							echo "## ${d}: failed to create!"
+							echo -e "quick-lxc-deploy: ${red}${d}: failed to create!${nocolor}"
 							exit 1
 						fi
 					fi
 				done
 			else
-				echo "## ${c}: invalid configuration file!"
+				echo -e "quick-lxc-deploy: ${red}${c}: invalid configuration file!${nocolor}"
 				exit 1
 			fi
 		fi
@@ -55,6 +60,22 @@ bridge_wireless() {
 	fi
 }
 
+pick_mirror() {
+	case "${1}" in
+		"potato" | "woody" | "sarge" | "etch" | "lenny")
+			echo "http://archive.debian.org/debian"
+			;;
+		"stable" | "testing" | "unstable" | "squeeze" | "wheezy")
+			echo "http://ftp.debian.org/debian"
+			;;
+		"hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring")
+			echo "http://archive.ubuntu.com/ubuntu"
+			;;
+		*)
+			;;
+	esac
+}
+
 main() {
 	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
 
@@ -64,6 +85,7 @@ main() {
 	local distro="${1}"
 	local arch="${2}"
 	local basename="${distro}-${arch}"
+	local mirror=`pick_mirror "${distro}"`
 	[ -z "${3}" ] && local containername=${basename} || local containername="${3}"
 	local rootfs="${DEPLOY_DIR}/${containername}"
 	local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
@@ -71,14 +93,15 @@ main() {
 	local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
 
 	local i=5
-	echo "-- Debian ${distro} (${arch}) is going to be debootstrapped to ${DEPLOY_DIR}/${containername}"
-	echo -n "-- To cancel press CTRL+C in"
+	echo -e "-- Distro ${blue}${distro}${nocolor} (${blue}${arch}${nocolor}) is going to be debootstrapped to"
+	echo -e "-- ${DEPLOY_DIR}/${containername}"
+	echo -ne "-- To cancel press CTRL+C in${red}"
 	while [ ${i} -ge 0 ]; do
 		echo -n " ${i}"
 		let i--
 		sleep 1
 	done
-	echo
+	echo -e ${nocolor}
 
 	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 
@@ -88,9 +111,9 @@ main() {
 
 	if [ ! -d "${rootfs}" ]; then
 		if [ ! -f "${tarball}" ]; then
-			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${MIRROR} || exit 1
+			sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${mirror} || exit 1
 		fi
-		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${MIRROR} || exit 1
+		sudo debootstrap --verbose --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${mirror} || exit 1
 		for dir in {,${rootfs}}/home/${USER}-${containername}; do
 			sudo mkdir -p ${dir}
 			sudo chown -R ${USER}:${USER} ${dir}
@@ -147,7 +170,7 @@ EOF"
 		local uid=`id -u ${USER}`
 		sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} ${USER}"
 	else
-		echo "## Directory ${rootfs} already exist!"
+		echo -e "quick-lxc-deploy: ${red}Directory ${rootfs} already exist!${nocolor}"
 	fi
 
 	if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
@@ -163,10 +186,11 @@ EOF"
 
 	bridge_wireless
 
-	echo "-- Container rootfs: ${DEPLOY_DIR}/${containername}"
-	echo "-- Container configuration: /etc/lxc/${containername}.conf"
-	echo "-- Container packages tarball: ${CACHE_DIR}/${containername}.tgz"
-	echo "-- For start at boot add ${distro}-${arch} to CONTAINER list in /etc/default/lxc"
+	echo -e "-- Container rootfs: ${blue}${DEPLOY_DIR}/${containername}${nocolor}"
+	echo -e "-- Container configuration: ${blue}/etc/lxc/${containername}.conf${nocolor}"
+	echo -e "-- Container packages tarball: ${blue}${CACHE_DIR}/${containername}.tgz${nocolor}"
+	echo -e "-- To autostart your brand new container at boot link ${blue}/etc/lxc/${containername}.conf${nocolor}"
+	echo -e "-- to ${blue}/etc/lxc/auto/${containername}.conf${nocolor}"
 }
 
 main ${*}

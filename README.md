@@ -19,7 +19,6 @@ Configuration file - ~/.quick-lxc-deploy.conf
 quick-lxc-deploy uses the following options:
 
 * PACKAGES - additional packages list to be included into container
-* MIRROR - mirror's url for debootstrap
 * CACHE_DIR - path to directory storing debootstrap's tarballs
 * DEPLOY_DIR - prefix path for container rootfs
 
