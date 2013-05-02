@@ -6,7 +6,7 @@ main() {
 	local red="\E[0;91m"
 	local nocolor="\E[0m"
 
-	local hostnames=( `ls /etc/lxc/*.conf | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
+	local hostnames=( `ls /etc/lxc/*.conf 2>/dev/null | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
 	local running_hosts=( `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"'` )
 	local i=0
 
