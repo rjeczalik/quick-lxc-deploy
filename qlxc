@@ -13,6 +13,9 @@ die_usage() {
 	echo -e "Usage: qlxc ${yellow}help${nocolor}   ${black}(prints this help message)${nocolor}"
 	echo -e "       qlxc ${yellow}deploy${nocolor} <debian or ubuntu distro name> amd64|i386 [<container name>]"
 	echo -e "       qlxc ${yellow}ssh${nocolor}    <container's hostname or item number>     [<command>]"
+	echo -e "       qlxc ${yellow}start${nocolor}  <container's hostname or item number>"
+	echo -e "       qlxc ${yellow}stop${nocolor}   <container's hostname or item number>"
+	echo -e "       qlxc ${yellow}rm${nocolor}     <container's hostname or item number>"
 	echo
 	echo    "Example usages:"
 	echo
@@ -205,9 +208,37 @@ EOF"
 	echo -e "-- to ${blue}/etc/lxc/auto/${containername}.conf${nocolor}"
 }
 
+get_all_containers() {
+	echo `ls /etc/lxc/*.conf 2>/dev/null | grep -Ev 'default|lxc\.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/' | sort`
+}
+
+get_running_containers() {
+	echo `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"' | sort`
+}
+
+do_start() {
+	local all=(
+				$(get_all_containers)
+		      )
+	local not_running=( $(diff \
+		                        <(for i in `get_all_containers`; do echo $i; done) \
+		                        <(for i in `get_running_containers`; do echo $i; done) |
+		                  grep '<' | perl -ne '/\<\s+(.*)/&&print"$1\n"')
+	                  )
+	echo ${not_running[@]}
+}
+
+# do_stop() {
+
+# }
+
+# do_rm() {
+
+# }
+
 do_ssh() {
-	local hostnames=( `ls /etc/lxc/*.conf 2>/dev/null | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
-	local running_hosts=( `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"'` )
+	local hostnames=( $(get_all_containers) )
+	local running_hosts=( $(get_running_containers) )
 	local i=0
 
 	declare -A hosts
@@ -268,6 +299,15 @@ main() {
 			;;
 		"ssh")
 			do_ssh ${*:${cmd_arg_idx}}
+			;;
+		"start")
+			do_start ${*:${cmd_arg_idx}}
+			;;
+		"stop")
+			do_stop ${*:${cmd_arg_idx}}
+			;;
+		"rm")
+			do_rm ${*:${cmd_arg_idx}}
 			;;
 		"help")
 			die_usage
