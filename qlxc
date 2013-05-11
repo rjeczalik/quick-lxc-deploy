@@ -121,10 +121,9 @@ deploy() {
 			sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${mirror} || exit 1
 		fi
 		sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${mirror} || exit 1
-		for dir in {,${rootfs}}/home/${USER}-${containername}; do
-			sudo mkdir -p ${dir}
-			sudo chown -R ${USER}:${USER} ${dir}
-		done
+		sudo mkdir -p ${rootfs}/home/${USER}
+		sudo chown -R ${USER}:${USER} ${rootfs}/home/${USER}
+		sudo chmod 0700 ${rootfs}/home/${USER}
 		# user keys
 		if ! grep -f ${HOME}/.ssh/lxc_rsa.pub ${HOME}/.ssh/authorized_key &>/dev/null; then
 			cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
