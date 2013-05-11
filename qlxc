@@ -126,7 +126,9 @@ deploy() {
 			sudo chown -R ${USER}:${USER} ${dir}
 		done
 		# user keys
-		cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
+		if ! grep -f ${HOME}/.ssh/lxc_rsa.pub ${HOME}/.ssh/authorized_key &>/dev/null; then
+			cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
+		fi
 		# root keys
 		sudo mkdir -p ${rootfs}/root/.ssh
 		sudo bash -c "cat /root/.ssh/lxc_rsa.pub >> ${rootfs}/root/.ssh/authorized_keys"
