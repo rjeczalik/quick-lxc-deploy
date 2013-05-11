@@ -4,18 +4,22 @@ readonly black="\E[0;90m"
 readonly blue="\E[0;94m"
 readonly red="\E[0;91m"
 readonly nocolor="\E[0m"
+readonly yellow="\E[0;33m"
 
-cmd=`echo ${0##*/} | perl -ne '/^(?:quick-lxc|qlxc)\-(\w+)$/&&print"$1"'`
+cmd=`echo ${0##*/} | perl -ne '(/^(?:quick-lxc|qlxc)\-(\w+)$/&&print"$1")||(/^lxcssh$/&&print"ssh")'`
 src=$(cd $(dirname $(readlink -f ${0})); pwd)
 
 die_usage() {
-	echo -e "usage: qlxc -h ${black}(prints this help message)${nocolor}"
-	echo    "       qlxc deploy <debian or ubuntu version name> amd64|i386 [<container name>]"
+	echo -e "Usage: qlxc ${yellow}help${nocolor}   ${black}(prints this help message)${nocolor}"
+	echo -e "       qlxc ${yellow}deploy${nocolor} <debian or ubuntu distro name> amd64|i386 [<container name>]"
+	echo -e "       qlxc ${yellow}ssh${nocolor}    <container's hostname or item number>     [<command>]"
 	echo
 	echo    "Example usages:"
 	echo
-	echo -e "  ${blue}qlxc deploy raring amd64${nocolor}  Deploys Ubuntu Raring (x86_64) with default hostname"
-	echo                     "                            setting"
+	echo -e "  ${blue}qlxc deploy raring amd64${nocolor}        Deploys Ubuntu Raring (x86_64) with default"
+	echo                     "                                  hostname setting"
+	echo
+	echo -e "  ${blue}qlxc ssh 0 \"echo \\\$(hostname)\"${nocolor}  Echoes hostname of a first container"
 	echo
 	exit 1
 }
@@ -83,7 +87,7 @@ pick_mirror() {
 	esac
 }
 
-deploy() {
+do_deploy() {
 	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
 
 	load_config
@@ -201,6 +205,57 @@ EOF"
 	echo -e "-- to ${blue}/etc/lxc/auto/${containername}.conf${nocolor}"
 }
 
+do_ssh() {
+	local hostnames=( `ls /etc/lxc/*.conf 2>/dev/null | grep -v 'lxc.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/'` )
+	local running_hosts=( `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"'` )
+	local i=0
+
+	declare -A hosts
+	declare -A items
+
+	for host in ${hostnames[@]}; do
+		if [ `echo ${running_hosts[@]} | tr ' ' '\n' | grep -c "^${host}$"` -ge 1 ]; then
+			local hwaddr=`cat /etc/lxc/${host}.conf | grep hwaddr | sed -e 's/lxc\.network\.hwaddr\ =\ \(.*\)/\1/' | tr '[A-Z]' '[a-z]'`
+			local ip=`cat /var/lib/misc/dnsmasq*.leases  | grep "${hwaddr}" | cut -d ' ' -f 3`
+			if [ ! -z "${hwaddr}" ] && [ ! -z "${ip}" ]; then
+				hosts[${host}]=${ip}
+				items[${i}]=${host}
+				let i++
+			fi
+		fi
+	done
+
+	if [ ${i} -eq 0 ]; then
+		echo -e "lxcssh: ${red}No running container found!${nocolor}"
+		exit 1
+	fi
+
+	local options=()
+	local dest_ip=
+
+	for item in ${!items[@]}; do
+		ip=${hosts[${items[${item}]}]}
+		options+=("${yellow}[${item}] ${nocolor}${items[${item}]} ${black}(${ip})${nocolor}")
+		if [ ! -z "${1}" ] && ([ "${1}" = "${item}" ] || [ "${1}" = "${items[${item}]}" ]); then
+			dest_ip=${ip}
+		fi
+	done
+
+	if [ -z "${dest_ip}" ]; then
+		echo
+		for o in ${!options[@]}; do
+			echo -e "  ${options[${o}]}"
+		done
+		echo
+		exit 1
+	fi
+
+	local login=`whoami`
+
+	ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
+	    -2 -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
+}
+
 main() {
 	local cmd_arg_idx=1
 	if [ -z "${cmd}" ]; then
@@ -209,9 +264,12 @@ main() {
 	fi
 	case "${cmd}" in
 		"deploy")
-			deploy ${*:${cmd_arg_idx}}
+			do_deploy ${*:${cmd_arg_idx}}
 			;;
-		"-h" | "--help")
+		"ssh")
+			do_ssh ${*:${cmd_arg_idx}}
+			;;
+		"help")
 			die_usage
 			;;
 		*)
