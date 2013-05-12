@@ -1,144 +1,144 @@
 #!/usr/bin/env bash
 
-readonly black="\E[0;90m"
-readonly blue="\E[0;94m"
-readonly red="\E[0;91m"
-readonly nocolor="\E[0m"
-readonly yellow="\E[0;33m"
+readonly BLACK="\E[0;90m"
+readonly BLUE="\E[0;94m"
+readonly RED="\E[0;91m"
+readonly YELLOW="\E[0;33m"
+readonly NOCOLOR="\E[0m"
 
 cmd=`echo ${0##*/} | perl -ne '(/^(?:quick-lxc|qlxc)\-(\w+)$/&&print"$1")||(/^lxcssh$/&&print"ssh")'`
 src=$(cd $(dirname $(readlink -f ${0})); pwd)
 
 die_usage() {
-	echo -e "Usage: qlxc ${yellow}help${nocolor}   ${black}(prints this help message)${nocolor}"
-	echo -e "       qlxc ${yellow}deploy${nocolor} <debian or ubuntu distro name> amd64|i386 [<container name>]"
-	echo -e "       qlxc ${yellow}ssh${nocolor}    <container's hostname or item number>     [<command>]"
-	echo -e "       qlxc ${yellow}start${nocolor}  <container's hostname or item number>"
-	echo -e "       qlxc ${yellow}stop${nocolor}   <container's hostname or item number>"
-	echo -e "       qlxc ${yellow}rm${nocolor}     <container's hostname or item number>"
-	echo
-	echo    "Example usages:"
-	echo
-	echo -e "  ${blue}qlxc deploy raring amd64${nocolor}        Deploys Ubuntu Raring (x86_64) with default"
-	echo                     "                                  hostname setting"
-	echo
-	echo -e "  ${blue}qlxc ssh 0 \"echo \\\$(hostname)\"${nocolor}  Echoes hostname of a first container"
-	echo
-	exit 1
+  echo -e "Usage: qlxc ${YELLOW}help${NOCOLOR}   ${BLACK}(prints this help message)${NOCOLOR}"
+  echo -e "       qlxc ${YELLOW}deploy${NOCOLOR} <distro name> amd64|i386 [<container name>]"
+  echo -e "       qlxc ${YELLOW}ssh${NOCOLOR}    [<hostname or index>]    [<command>]"
+  echo -e "       qlxc ${YELLOW}start${NOCOLOR}  [<hostname or index>]"
+  echo -e "       qlxc ${YELLOW}stop${NOCOLOR}   [<hostname or index>]"
+  echo -e "       qlxc ${YELLOW}rm${NOCOLOR}     [<hostname or index>]"
+  echo
+  echo    "Example usages:"
+  echo
+  echo -e "  ${BLUE}qlxc deploy raring amd64${NOCOLOR}        Deploys Ubuntu Raring (x86_64) with default"
+  echo                     "                                  hostname setting"
+  echo
+  echo -e "  ${BLUE}qlxc ssh 0 \"echo \\\$(hostname)\"${NOCOLOR}  Echoes hostname of a first container"
+  echo
+  exit 1
 }
 
 load_config() {
-	for c in {/etc/,~/,${src}/}.{quick-lxc-deploy,qlxc}.conf; do
-		if [ -f "${c}" ]; then
-			source "${c}"
-			if [ ! -z "${PACKAGES}" ] && [ ! -z "${CACHE_DIR}" ] &&
-				[ ! -z "${DEPLOY_DIR}" ]; then
-				for d in "${CACHE_DIR}" "${DEPLOY_DIR}"; do
-					if [ ! -d "${d}" ]; then
-						if ! mkdir -p ${d} 2>/dev/null; then
-							echo -e "quick-lxc-deploy: ${red}${d}: failed to create!${nocolor}"
-							exit 1
-						fi
-					fi
-				done
-			else
-				echo -e "quick-lxc-deploy: ${red}${c}: invalid configuration file!${nocolor}"
-				exit 1
-			fi
-		fi
-	done
+  for c in {/etc/,~/,${src}/}.{quick-lxc-deploy,qlxc}.conf; do
+    if [ -f "${c}" ]; then
+      source "${c}"
+      if [ ! -z "${PACKAGES}" ] && [ ! -z "${CACHE_DIR}" ] &&
+        [ ! -z "${DEPLOY_DIR}" ]; then
+        for d in "${CACHE_DIR}" "${DEPLOY_DIR}"; do
+          if [ ! -d "${d}" ]; then
+            if ! mkdir -p ${d} 2>/dev/null; then
+              echo -e "quick-lxc-deploy: ${RED}${d}: failed to create!${NOCOLOR}"
+              exit 1
+            fi
+          fi
+        done
+      else
+        echo -e "quick-lxc-deploy: ${RED}${c}: invalid configuration file!${NOCOLOR}"
+        exit 1
+      fi
+    fi
+  done
 }
 
 configure_keys() {
-	if test ! -f ${HOME}/.ssh/lxc_rsa; then
-		ssh-keygen -t rsa -N "" -C ${USER} -f ${HOME}/.ssh/lxc_rsa
-		ssh-add ${HOME}/.ssh/lxc_rsa
-		cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
-		chmod 600 ${HOME}/.ssh/authorized_keys
-	fi
-	if sudo test ! -f /root/.ssh/lxc_rsa; then
-		sudo ssh-keygen -t rsa -N "" -C ${USER} -f /root/.ssh/lxc_rsa
-		sudo ssh-add /root/.ssh/lxc_rsa
-	fi
+  if test ! -f ${HOME}/.ssh/lxc_rsa; then
+    ssh-keygen -t rsa -N "" -C ${USER} -f ${HOME}/.ssh/lxc_rsa
+    ssh-add ${HOME}/.ssh/lxc_rsa
+    cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
+    chmod 600 ${HOME}/.ssh/authorized_keys
+  fi
+  if sudo test ! -f /root/.ssh/lxc_rsa; then
+    sudo ssh-keygen -t rsa -N "" -C ${USER} -f /root/.ssh/lxc_rsa
+    sudo ssh-add /root/.ssh/lxc_rsa
+  fi
 }
 
 bridge_wireless() {
-	sudo bash -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
-	if [ `grep -c -E '^net.ipv4.ip_forward=1' /etc/sysctl.conf` -gt 0 ]; then
-		echo "** ip_forward entry already exists in /etc/sysctl.conf!"
-	else
-		sudo bash -c "echo net.ipv4.ip_forward=1 >> /etc/sysctl.conf"
-	fi
-	if [ `ifconfig wlan0 2>&1 | grep -c error` -eq 0 ]; then
-		sudo /sbin/iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-	fi
+  sudo bash -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
+  if [ `grep -c -E '^net.ipv4.ip_forward=1' /etc/sysctl.conf` -gt 0 ]; then
+    echo "** ip_forward entry already exists in /etc/sysctl.conf!"
+  else
+    sudo bash -c "echo net.ipv4.ip_forward=1 >> /etc/sysctl.conf"
+  fi
+  if [ `ifconfig wlan0 2>&1 | grep -c error` -eq 0 ]; then
+    sudo /sbin/iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+  fi
 }
 
 pick_mirror() {
-	case "${1}" in
-		"potato" | "woody" | "sarge" | "etch" | "lenny")
-			echo "http://archive.debian.org/debian"
-			;;
-		"stable" | "testing" | "unstable" | "squeeze" | "wheezy")
-			echo "http://ftp.debian.org/debian"
-			;;
-		"hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring")
-			echo "http://archive.ubuntu.com/ubuntu"
-			;;
-		*)
-			;;
-	esac
+  case "${1}" in
+    "potato" | "woody" | "sarge" | "etch" | "lenny")
+      echo "http://archive.debian.org/debian"
+      ;;
+    "stable" | "testing" | "unstable" | "squeeze" | "wheezy")
+      echo "http://ftp.debian.org/debian"
+      ;;
+    "hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring")
+      echo "http://archive.ubuntu.com/ubuntu"
+      ;;
+    *)
+      ;;
+  esac
 }
 
 do_deploy() {
-	( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
+  ( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
 
-	load_config
-	configure_keys
+  load_config
+  configure_keys
 
-	local distro="${1}"
-	local arch="${2}"
-	local basename="${distro}-${arch}"
-	local mirror=`pick_mirror "${distro}"`
-	[ -z "${3}" ] && local containername=${basename} || local containername="${3}"
-	local rootfs="${DEPLOY_DIR}/${containername}"
-	local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
-	local opt_sep=' '
-	local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
+  local distro="${1}"
+  local arch="${2}"
+  local basename="${distro}-${arch}"
+  local mirror=`pick_mirror "${distro}"`
+  [ -z "${3}" ] && local containername=${basename} || local containername="${3}"
+  local rootfs="${DEPLOY_DIR}/${containername}"
+  local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
+  local opt_sep=' '
+  local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
 
-	local i=5
-	echo -e "-- Distro ${blue}${distro}${nocolor} (${blue}${arch}${nocolor}) is going to be debootstrapped to"
-	echo -e "-- ${DEPLOY_DIR}/${containername}"
-	echo -ne "-- To cancel press CTRL+C in${red}"
-	while [ ${i} -ge 0 ]; do
-		echo -n " ${i}"
-		let i--
-		sleep 1
-	done
-	echo -e ${nocolor}
+  local i=5
+  echo -e "-- Distro ${BLUE}${distro}${NOCOLOR} (${BLUE}${arch}${NOCOLOR}) is going to be debootstrapped to"
+  echo -e "-- ${DEPLOY_DIR}/${containername}"
+  echo -ne "-- To cancel press CTRL+C in${RED}"
+  while [ ${i} -ge 0 ]; do
+    echo -n " ${i}"
+    let i--
+    sleep 1
+  done
+  echo -e ${NOCOLOR}
 
-	sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
+  sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 
-	if ! dpkg-query -W debootstrap | perl -ne '/^debootstrap\s+1.*$/ && exit 1'; then
-		opt_sep='='
-	fi
+  if ! dpkg-query -W debootstrap | perl -ne '/^debootstrap\s+1.*$/ && exit 1'; then
+    opt_sep='='
+  fi
 
-	if [ ! -d "${rootfs}" ]; then
-		if [ ! -f "${tarball}" ]; then
-			sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${mirror} || exit 1
-		fi
-		sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${mirror} || exit 1
-		sudo mkdir -p ${rootfs}/home/${USER}
-		sudo chown -R ${USER}:${USER} ${rootfs}/home/${USER}
-		sudo chmod 0700 ${rootfs}/home/${USER}
-		# user keys
-		if ! grep -f ${HOME}/.ssh/lxc_rsa.pub ${HOME}/.ssh/authorized_key &>/dev/null; then
-			cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
-		fi
-		# root keys
-		sudo mkdir -p ${rootfs}/root/.ssh
-		sudo bash -c "cat /root/.ssh/lxc_rsa.pub >> ${rootfs}/root/.ssh/authorized_keys"
-		sudo bash -c "cat >${DEPLOY_DIR}/${containername}.conf <<EOF
+  if [ ! -d "${rootfs}" ]; then
+    if [ ! -f "${tarball}" ]; then
+      sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${mirror} || exit 1
+    fi
+    sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${mirror} || exit 1
+    sudo mkdir -p ${rootfs}/home/${USER}
+    sudo chown -R ${USER}:${USER} ${rootfs}/home/${USER}
+    sudo chmod 0700 ${rootfs}/home/${USER}
+    # user keys
+    if ! grep -f ${HOME}/.ssh/lxc_rsa.pub ${HOME}/.ssh/authorized_key &>/dev/null; then
+      cat ${HOME}/.ssh/lxc_rsa.pub >> ${HOME}/.ssh/authorized_keys
+    fi
+    # root keys
+    sudo mkdir -p ${rootfs}/root/.ssh
+    sudo bash -c "cat /root/.ssh/lxc_rsa.pub >> ${rootfs}/root/.ssh/authorized_keys"
+    sudo bash -c "cat >${DEPLOY_DIR}/${containername}.conf <<EOF
 lxc.tty = 4
 lxc.pts = 1024
 lxc.utsname = ${containername}
@@ -165,161 +165,204 @@ lxc.network.link = lxcbr0
 lxc.network.name = eth0
 lxc.network.hwaddr = ${hwaddr}
 EOF"
-		sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
-		sudo bash -c "echo ${containername} > ${rootfs}/etc/hostname"
-		sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
-		sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
+    sudo chmod ugo-x ${rootfs}/etc/init.d/hwclock*
+    sudo bash -c "echo ${containername} > ${rootfs}/etc/hostname"
+    sudo bash -c "echo en_US.UTF-8 UTF-8 > ${rootfs}/etc/locale.gen"
+    sudo bash -c "cat >${rootfs}/etc/network/interfaces <<EOF
 auto lo
 iface lo inet loopback
 
 auto eth0
 iface eth0 inet dhcp
 EOF"
-		sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
-		sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
-		sudo mkdir ${rootfs}/home/${USER}
-		sudo chown ${USER}:${USER} ${rootfs}/home/${USER}
-		sudo ln -sf ${DEPLOY_DIR}/${containername}.conf /etc/lxc/${containername}.conf
-		sudo lxc-start -d -n ${containername} -f /etc/lxc/${containername}.conf
-		sleep 15 # lolwut
-		local uid=`id -u ${USER}`
-		sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} ${USER}"
-	else
-		echo -e "quick-lxc-deploy: ${red}Directory ${rootfs} already exist!${nocolor}"
-	fi
+    sudo sed -i -e's/^5:23:respawn/#5:23:respawn/g' ${rootfs}/etc/inittab
+    sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
+    sudo mkdir ${rootfs}/home/${USER}
+    sudo chown ${USER}:${USER} ${rootfs}/home/${USER}
+    sudo ln -sf ${DEPLOY_DIR}/${containername}.conf /etc/lxc/${containername}.conf
+    sudo lxc-start -d -n ${containername} -f /etc/lxc/${containername}.conf
+    sleep 15 # lolwut
+    local uid=`id -u ${USER}`
+    sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} ${USER}"
+  else
+    echo -e "quick-lxc-deploy: ${RED}Directory ${rootfs} already exist!${NOCOLOR}"
+  fi
 
-	if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
-		sudo bash -c "cat >>/etc/default/lxc <<EOF
+  if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
+    sudo bash -c "cat >>/etc/default/lxc <<EOF
 RUN=yes
 EOF"
-	fi
-	if [ `grep -cE '^CONF_DIR' /etc/default/lxc` -eq 0 ]; then
-		sudo bash -c "cat >>/etc/default/lxc <<EOF
+  fi
+  if [ `grep -cE '^CONF_DIR' /etc/default/lxc` -eq 0 ]; then
+    sudo bash -c "cat >>/etc/default/lxc <<EOF
 CONF_DIR=/etc/lxc
 EOF"
-	fi
+  fi
 
-	bridge_wireless
+  bridge_wireless
 
-	echo -e "-- Container rootfs: ${blue}${DEPLOY_DIR}/${containername}${nocolor}"
-	echo -e "-- Container configuration: ${blue}/etc/lxc/${containername}.conf${nocolor}"
-	echo -e "-- Container packages tarball: ${blue}${CACHE_DIR}/${containername}.tgz${nocolor}"
-	echo -e "-- To autostart your brand new container at boot link ${blue}/etc/lxc/${containername}.conf${nocolor}"
-	echo -e "-- to ${blue}/etc/lxc/auto/${containername}.conf${nocolor}"
+  echo -e "-- Container rootfs: ${BLUE}${DEPLOY_DIR}/${containername}${NOCOLOR}"
+  echo -e "-- Container configuration: ${BLUE}/etc/lxc/${containername}.conf${NOCOLOR}"
+  echo -e "-- Container packages tarball: ${BLUE}${CACHE_DIR}/${containername}.tgz${NOCOLOR}"
+  echo -e "-- To autostart your brand new container at boot link ${BLUE}/etc/lxc/${containername}.conf${NOCOLOR}"
+  echo -e "-- to ${BLUE}/etc/lxc/auto/${containername}.conf${NOCOLOR}"
 }
 
-get_all_containers() {
-	echo `ls /etc/lxc/*.conf 2>/dev/null | grep -Ev 'default|lxc\.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/' | sort`
+build_container_status() {
+  containers_all=(
+                   `ls /etc/lxc/*.conf 2>/dev/null | grep -Ev 'default|lxc\.conf' | sed -e's/\/etc\/lxc\/\(.*\)\.conf/\1/' | sort`
+                 )
+  containers_started=(
+                       `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"' | sort`
+                     )
+  containers_started_ip=(
+                          `for c in ${containers_started[@]}; do
+                            ip=\$(cat /etc/lxc/\${c}.conf | perl -ne '/^lxc\.network\.hwaddr\s\=\s(.*)/&&print"$1\n"' | tr '[A-Z]' '[a-z]' |
+                                  while read h; do cat /var/lib/misc/dnsmasq*.leases | grep \${h} | cut -d ' ' -f 3; done)
+                            if [ -z "\${ip}" ]; then
+                              echo "not found"
+                            else
+                              echo "\${ip}"
+                            fi
+                          done`
+                        )
+  containers_stopped=(
+                       `diff \
+                          <(echo ${containers_all[@]} | tr ' ' '\n') \
+                          <(echo ${containers_started[@]} | tr ' ' '\n') |
+                        perl -ne '/\<\s+(.*)/&&print"$1\n"'`
+                     )
 }
 
-get_running_containers() {
-	echo `ps ax | perl -ne '/.*lxc-start.*\-n\s([\w\d\-\._]+).*/ && print "$1\n"' | sort`
+does_container_exist() {
+  if [ ! -z "${1}" ] && grep "${1}" <(echo ${containers_all[@]}) &>/dev/null; then
+    return 0
+  else
+    return 1
+  fi
 }
 
-do_start() {
-	local all=(
-				$(get_all_containers)
-		      )
-	local not_running=( $(diff \
-		                        <(for i in `get_all_containers`; do echo $i; done) \
-		                        <(for i in `get_running_containers`; do echo $i; done) |
-		                  grep '<' | perl -ne '/\<\s+(.*)/&&print"$1\n"')
-	                  )
-	echo ${not_running[@]}
+is_container_running() {
+  if [ ! -z "${1}" ] && grep "${1}" <(echo ${containers_started[@]}) &>/dev/null; then
+    return 0
+  else
+    return 1
+  fi
 }
 
-# do_stop() {
+get_container_ip() {
+  if [ ${#} -ne 2 ]; then
+    return 1
+  fi
 
-# }
+  local ip_idx=`grep -n "${2}" <(echo ${containers_started[@]} | tr ' ' '\n') |
+                perl -ne '/^(\d+)\:.*/&&print int($1)-1'`
 
-# do_rm() {
+  if [ -z "${ip_idx}" ] || [ -z "${containers_started_ip[${ip_idx}]}" ] ||
+     [ "${containers_started_ip[${ip_idx}]}" = "not found" ]
+  then
+    return 1
+  fi
 
-# }
+  eval "${1}=\${containers_started_ip[\${ip_idx}]}"
+  return 0
+}
+
+is_digit() {
+  if [ ${#} -ne 1 ]; then
+    return 1
+  fi
+
+  case ${1} in
+    *[!0-9]*|"") return 1;;
+    *) return 0;;
+  esac
+}
 
 do_ssh() {
-	local hostnames=( $(get_all_containers) )
-	local running_hosts=( $(get_running_containers) )
-	local i=0
+  build_container_status
 
-	declare -A hosts
-	declare -A items
+  local active_containers=()
 
-	for host in ${hostnames[@]}; do
-		if [ `echo ${running_hosts[@]} | tr ' ' '\n' | grep -c "^${host}$"` -ge 1 ]; then
-			local hwaddr=`cat /etc/lxc/${host}.conf | grep hwaddr | sed -e 's/lxc\.network\.hwaddr\ =\ \(.*\)/\1/' | tr '[A-Z]' '[a-z]'`
-			local ip=`cat /var/lib/misc/dnsmasq*.leases  | grep "${hwaddr}" | cut -d ' ' -f 3`
-			if [ ! -z "${hwaddr}" ] && [ ! -z "${ip}" ]; then
-				hosts[${host}]=${ip}
-				items[${i}]=${host}
-				let i++
-			fi
-		fi
-	done
+  for c in ${containers_all[@]}; do
+    if is_container_running "${c}" && get_container_ip ip "${c}"; then
+      active_containers+=( "${c}" )
+    fi
+  done
 
-	if [ ${i} -eq 0 ]; then
-		echo -e "lxcssh: ${red}No running container found!${nocolor}"
-		exit 1
-	fi
+  local ip=""
 
-	local options=()
-	local dest_ip=
+  if [ ${#} -ge 1 ]; then
+    if is_digit "${1}" && [ ${1} -ge 0 ] && [ ! -z "${active_containers[${1}]}" ]; then
+      if ! get_container_ip ip "${active_containers[${1}]}"; then
+        echo -e "qlxc: ssh: ${RED}Unable to determine IP address for ${active_containers[${1}]}${NOCOLOR}"
+        ip=
+      fi
+    else
+      if ! does_container_exist "${1}"; then
+        echo -e "qlxc: ssh: ${RED}Container ${1} does not exist${NOCOLOR}"
+      elif ! is_container_running "${1}"; then
+        echo -e "qlxc: ssh: ${RED}Container ${1} is not running${NOCOLOR}"
+      elif ! get_container_ip ip "${1}"; then
+        echo -e "qlxc: ssh: ${RED}Unable to determine IP address for ${1}${NOCOLOR}"
+        ip=
+      fi
+    fi
+  fi
 
-	for item in ${!items[@]}; do
-		ip=${hosts[${items[${item}]}]}
-		options+=("${yellow}[${item}] ${nocolor}${items[${item}]} ${black}(${ip})${nocolor}")
-		if [ ! -z "${1}" ] && ([ "${1}" = "${item}" ] || [ "${1}" = "${items[${item}]}" ]); then
-			dest_ip=${ip}
-		fi
-	done
+  if [ -z "${ip}" ]; then
+    local i=0
+    echo
+    for c in ${containers_all[@]}; do
+      if ! is_container_running "${c}"; then
+        echo -e "      ${BLACK}${c} (not running)${NOCOLOR}"
+      elif ! get_container_ip ip "${c}"; then
+        echo -e "      ${BLACK}${c} (cannot determine IP)${NOCOLOR}"
+      else
+        echo -e "  ${YELLOW}[${i}]${NOCOLOR} ${c} ${BLACK}(${ip})${NOCOLOR}"
+        let i++
+      fi
+    done
+    echo
+    exit 1
+  fi
 
-	if [ -z "${dest_ip}" ]; then
-		echo
-		for o in ${!options[@]}; do
-			echo -e "  ${options[${o}]}"
-		done
-		echo
-		exit 1
-	fi
+  local login=`whoami`
+  local keyfile=`getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa
 
-	local login=`whoami`
-
-	ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
-	    -2 -i `getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa -l ${login} ${dest_ip} "${*:2}"
+  ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
+      -2 -i "${keyfile}" -l "${login}" "${ip}" "${*:2}"
 }
 
 main() {
-	local cmd_arg_idx=1
-	if [ -z "${cmd}" ]; then
-		cmd=${1}
-		cmd_arg_idx=2
-	fi
-	case "${cmd}" in
-		"deploy")
-			do_deploy ${*:${cmd_arg_idx}}
-			;;
-		"ssh")
-			do_ssh ${*:${cmd_arg_idx}}
-			;;
-		"start")
-			do_start ${*:${cmd_arg_idx}}
-			;;
-		"stop")
-			do_stop ${*:${cmd_arg_idx}}
-			;;
-		"rm")
-			do_rm ${*:${cmd_arg_idx}}
-			;;
-		"help")
-			die_usage
-			;;
-		*)
-			if [ -z "${cmd}" ]; then
-				echo -e "qlxc: ${red}Command is empty: use --help for more details"
-			else
-				echo -e "qlxc: ${red}Unrecognized command: ${cmd}${nocolor}"
-			fi
-			;;
-	esac
+  local cmd_arg_idx=1
+  if [ -z "${cmd}" ]; then
+    cmd=${1}
+    cmd_arg_idx=2
+  fi
+  case "${cmd}" in
+    "deploy")
+      do_deploy ${*:${cmd_arg_idx}}
+      ;;
+    "ssh")
+      do_ssh ${*:${cmd_arg_idx}}
+      ;;
+    "start")
+      do_start ${*:${cmd_arg_idx}}
+      ;;
+    "stop")
+      do_stop ${*:${cmd_arg_idx}}
+      ;;
+    "rm")
+      do_rm ${*:${cmd_arg_idx}}
+      ;;
+    "help")
+      die_usage
+      ;;
+    *)
+      die_usage
+      ;;
+  esac
 }
 
 main ${*}
