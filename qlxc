@@ -454,18 +454,27 @@ do_rm() {
     exit 1
   fi
 
+  local to_be_removed=(
+                        "$(readlink -f /etc/lxc/${c}.conf)"
+                        "$(dirname $(readlink -f /etc/lxc/${c}.conf))/${c}.hold"
+                        "${rootfs}"
+                        "/etc/lxc/${c}.conf"
+                      )
+
   echo -e "Removing container ${RED}${c}${NOCOLOR} - the following files will be wiped out:"
   echo
-  echo -e "  ${RED}/etc/lxc/${c}.conf${NOCOLOR}"
-  echo -e "  ${RED}$(readlink -f /etc/lxc/${c}.conf)${NOCOLOR}"
-  echo -e "  ${RED}${rootfs}/*${NOCOLOR}"
+  for f in ${!to_be_removed[@]}; do
+    if [ -e "${f}" ]; then
+      echo -e "  ${RED}${f}${NOCOLOR}"
+    fi
+  done
   echo
 
   count_down 10
 
   echo
 
-  if sudo rm -rf "$(readlink -f /etc/lxc/${c}.conf)" "/etc/lxc/${c}.conf" "${rootfs}"; then
+  if printf "%s\n" "${to_be_removed[@]}" | xargs -i sudo rm -rf {}; then
     echo -e "qlxc: rm: \"${c}\" container removed succesffuly"
   else
     echo -e "qlxc: rm: ${RED}Failed to remove \"${c}\" container${NOCOLOR}"
