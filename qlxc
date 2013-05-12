@@ -22,7 +22,7 @@ die_usage() {
   echo -e "  ${BLUE}qlxc deploy raring amd64${NOCOLOR}        Deploys Ubuntu Raring (x86_64) with default"
   echo                     "                                  hostname setting"
   echo
-  echo -e "  ${BLUE}qlxc ssh 0 \"echo \\\$(hostname)\"${NOCOLOR}  Echoes hostname of a first container"
+  echo -e "  ${BLUE}qlxc ssh 0 \"echo \\\$(hostname)\"${NOCOLOR}  Echoes hostname of first container"
   echo
   exit 1
 }
@@ -74,18 +74,25 @@ bridge_wireless() {
   fi
 }
 
-pick_mirror() {
+update_distro_specific_configuration() {
   case "${1}" in
     "potato" | "woody" | "sarge" | "etch" | "lenny")
-      echo "http://archive.debian.org/debian"
+      eval "${2}=http://archive.debian.org/debian"
+      eval "${3}=${PACKAGES},dhcp3-client"
+      return 0
       ;;
     "stable" | "testing" | "unstable" | "squeeze" | "wheezy")
-      echo "http://ftp.debian.org/debian"
+      eval "${2}=http://ftp.debian.org/debian"
+      eval "${3}=${PACKAGES},isc-dhcp-client"
+      return 0
       ;;
     "hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring")
-      echo "http://archive.ubuntu.com/ubuntu"
+      eval "${2}=http://archive.ubuntu.com/ubuntu"
+      eval "${3}=${PACKAGES},isc-dhcp-client"
+      return 0
       ;;
     *)
+      return 1
       ;;
   esac
 }
@@ -128,14 +135,17 @@ do_deploy() {
   local distro="${1}"
   local arch="${2}"
   local basename="${distro}-${arch}"
-  local mirror=`pick_mirror "${distro}"`
   [ -z "${3}" ] && local containername=${basename} || local containername="${3}"
   local rootfs="${DEPLOY_DIR}/${containername}"
   local hwaddr="00`echo ${containername} | md5sum | perl -ne 'for ($i=0;$i<10;$i+=2) { print ":".substr($_, $i, 2) }'`"
   local opt_sep=' '
   local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
 
-  
+  if ! update_distro_specific_configuration "${1}" MIRROR PACKAGES; then
+    echo -e "qlxc: ${RED}Failed to configure \"${1}\" distro${NOCOLOR}"
+    exit 1
+  fi
+
   echo -e "Distro ${BLUE}${distro}${NOCOLOR} (${BLUE}${arch}${NOCOLOR}) is going to be debootstrapped to"
   echo -e "${DEPLOY_DIR}/${containername}"
   echo
@@ -152,9 +162,9 @@ do_deploy() {
 
   if [ ! -d "${rootfs}" ]; then
     if [ ! -f "${tarball}" ]; then
-      sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${mirror} || exit 1
+      sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --make-tarball${opt_sep}"${tarball}" ${distro} `mktemp -d` ${MIRROR} || exit 1
     fi
-    sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${mirror} || exit 1
+    sudo debootstrap --verbose --no-check-gpg --variant=minbase --arch=${arch} --include="${PACKAGES}" --unpack-tarball${opt_sep}"${tarball}" ${distro} "${rootfs}" ${MIRROR} || exit 1
     sudo mkdir -p ${rootfs}/home/${USER}
     sudo chown -R ${USER}:${USER} ${rootfs}/home/${USER}
     sudo chmod 0700 ${rootfs}/home/${USER}
@@ -211,7 +221,10 @@ EOF"
     sudo lxc-start -d -n ${containername} -f /etc/lxc/${containername}.conf
     sleep 15 # lolwut
     local uid=`id -u ${USER}`
-    sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} ${USER}"
+    sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} -G sudo ${USER}"
+    sudo bash -c "cat >>${rootfs}/etc/sudoers <<EOF
+${USER} ALL=(ALL) NOPASSWD: ALL
+EOF"
   else
     echo -e "quick-lxc-deploy: ${RED}Directory ${rootfs} already exist!${NOCOLOR}"
   fi
@@ -248,7 +261,7 @@ build_container_status() {
                             ip=\$(cat /etc/lxc/\${c}.conf | perl -ne '/^lxc\.network\.hwaddr\s\=\s(.*)/&&print"$1\n"' | tr '[A-Z]' '[a-z]' |
                                   while read h; do cat /var/lib/misc/dnsmasq*.leases | grep \${h} | cut -d ' ' -f 3; done)
                             if [ -z "\${ip}" ]; then
-                              echo "not found"
+                              echo "notfound"
                             else
                               echo "\${ip}"
                             fi
@@ -287,7 +300,7 @@ get_container_ip() {
                 perl -ne '/^(\d+)\:.*/&&print int($1)-1'`
 
   if [ -z "${ip_idx}" ] || [ -z "${containers_started_ip[${ip_idx}]}" ] ||
-     [ "${containers_started_ip[${ip_idx}]}" = "not found" ]
+     [ "${containers_started_ip[${ip_idx}]}" = "notfound" ]
   then
     return 1
   fi
@@ -464,8 +477,8 @@ do_rm() {
   echo -e "Removing container ${RED}${c}${NOCOLOR} - the following files will be wiped out:"
   echo
   for f in ${!to_be_removed[@]}; do
-    if [ -e "${f}" ]; then
-      echo -e "  ${RED}${f}${NOCOLOR}"
+    if [ -e "${to_be_removed[${f}]}" ]; then
+      echo -e "  ${RED}${to_be_removed[${f}]}${NOCOLOR}"
     fi
   done
   echo
@@ -503,10 +516,12 @@ main() {
     "rm")
       do_rm ${*:${cmd_arg_idx}}
       ;;
-    "help")
+    "help"|"")
       die_usage
       ;;
     *)
+      echo -e "qlxc: ${RED}Unrecognized option: ${cmd}${NOCOLOR}"
+      echo
       die_usage
       ;;
   esac
