@@ -383,6 +383,55 @@ do_start() {
   fi
 }
 
+do_stop() {
+  build_container_status
+
+  local active_containers=()
+
+  for c in ${containers_all[@]}; do
+    if is_container_running "${c}"; then
+      active_containers+=( "${c}" )
+    fi
+  done
+
+  local container=
+
+  if [ ${#} -eq 1 ]; then
+    if is_digit "${1}" && [ ${1} -ge 0 ] && [ ! -z "${active_containers[${1}]}" ]; then
+      container=${active_containers[${1}]}
+    else
+      if ! does_container_exist "${1}"; then
+        echo -e "qlxc: ssh: ${RED}Container ${1} does not exist${NOCOLOR}"
+      elif ! is_container_running "${1}"; then
+        echo -e "qlxc: ssh: ${RED}Container ${1} is not running${NOCOLOR}"
+      else
+        container=${active_containers[${1}]}
+      fi
+    fi
+  fi
+
+  if [ -z "${container}" ]; then
+    local i=0
+    echo
+    for c in ${containers_all[@]}; do
+      if ! is_container_running "${c}"; then
+        echo -e "      ${BLACK}${c} (not running)${NOCOLOR}"
+      else
+        echo -e "  ${YELLOW}[${i}]${NOCOLOR} ${c}"
+        let i++
+      fi
+    done
+    echo
+    exit 1
+  fi
+
+  if sudo lxc-stop -n ${container}; then
+    echo -e "qlxc: start: ${BLUE}${container}${NOCOLOR} container stopped succesffuly"
+  else
+    echo -e "qlxc: start: ${RED}Failed to stop ${container} container${NOCOLOR}"
+  fi
+}
+
 main() {
   local cmd_arg_idx=1
   if [ -z "${cmd}" ]; then
