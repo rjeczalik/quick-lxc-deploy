@@ -90,6 +90,35 @@ pick_mirror() {
   esac
 }
 
+is_digit() {
+  if [ ${#} -ne 1 ]; then
+    return 1
+  fi
+
+  case ${1} in
+    *[!0-9]*|"") return 1;;
+    *) return 0;;
+  esac
+}
+
+count_down() {
+  if is_digit "${1}"; then
+    local i=${1}
+  else
+    local i=5
+  fi
+
+  echo -ne "To cancel press CTRL+C in${RED}"
+
+  while [ ${i} -ge 0 ]; do
+    echo -n " ${i}"
+    let i--
+    sleep 1
+  done
+
+  echo -e ${NOCOLOR}
+}
+
 do_deploy() {
   ( [ -z "${1}" ] || [ -z "${2}" ] ) && die_usage
 
@@ -106,16 +135,14 @@ do_deploy() {
   local opt_sep=' '
   local tarball="${CACHE_DIR}/${basename}-`echo ${PACKAGES} | sha1sum | perl -ne '/([\w\d]+)\s.*/ && print "$1"'`.tgz"
 
-  local i=5
-  echo -e "-- Distro ${BLUE}${distro}${NOCOLOR} (${BLUE}${arch}${NOCOLOR}) is going to be debootstrapped to"
-  echo -e "-- ${DEPLOY_DIR}/${containername}"
-  echo -ne "-- To cancel press CTRL+C in${RED}"
-  while [ ${i} -ge 0 ]; do
-    echo -n " ${i}"
-    let i--
-    sleep 1
-  done
-  echo -e ${NOCOLOR}
+  
+  echo -e "Distro ${BLUE}${distro}${NOCOLOR} (${BLUE}${arch}${NOCOLOR}) is going to be debootstrapped to"
+  echo -e "${DEPLOY_DIR}/${containername}"
+  echo
+
+  count_down 5
+
+  echo
 
   sudo apt-get -y --force-yes install lxc bridge-utils libvirt-bin debootstrap
 
@@ -268,49 +295,43 @@ get_container_ip() {
   return 0
 }
 
-is_digit() {
-  if [ ${#} -ne 1 ]; then
+read_running_container() {
+  if [ ${#} -ne 2 ] || [ -z "${1}" ]; then
     return 1
   fi
 
-  case ${1} in
-    *[!0-9]*|"") return 1;;
-    *) return 0;;
-  esac
-}
-
-do_ssh() {
   build_container_status
+
+  if [ ${#containers_all[@]} -eq 0 ]; then
+    echo -e "qlxc: ${RED}You have no containers deployed${NOCOLOR}"
+    return 1
+  fi
 
   local active_containers=()
 
   for c in ${containers_all[@]}; do
-    if is_container_running "${c}" && get_container_ip ip "${c}"; then
+    if is_container_running "${c}"; then
       active_containers+=( "${c}" )
     fi
   done
 
-  local ip=""
+  local container=""
 
-  if [ ${#} -ge 1 ]; then
-    if is_digit "${1}" && [ ${1} -ge 0 ] && [ ! -z "${active_containers[${1}]}" ]; then
-      if ! get_container_ip ip "${active_containers[${1}]}"; then
-        echo -e "qlxc: ssh: ${RED}Unable to determine IP address for ${active_containers[${1}]}${NOCOLOR}"
-        ip=
-      fi
+  if is_digit "${2}" && [ ${2} -ge 0 ] && [ ! -z "${active_containers[${2}]}" ]; then
+    container=${active_containers[${2}]}
+  elif [ ! -z "${2}" ]; then
+    if ! does_container_exist "${2}"; then
+      echo -e "qlxc: ${RED}Container \"${2}\" does not exist${NOCOLOR}"
+    elif ! get_container_ip ip "${c}"; then
+      echo -e "qlxc: ${RED}Cannot determine an IP address of \"${2}\" container${NOCOLOR}"
+    elif ! is_container_running "${2}"; then
+      echo -e "qlxc: ${RED}Container \"${2}\" is not running${NOCOLOR}"
     else
-      if ! does_container_exist "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} does not exist${NOCOLOR}"
-      elif ! is_container_running "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} is not running${NOCOLOR}"
-      elif ! get_container_ip ip "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Unable to determine IP address for ${1}${NOCOLOR}"
-        ip=
-      fi
+      container=${active_containers[${2}]}
     fi
   fi
 
-  if [ -z "${ip}" ]; then
+  if [ -z "${container}" ]; then
     local i=0
     echo
     for c in ${containers_all[@]}; do
@@ -324,18 +345,24 @@ do_ssh() {
       fi
     done
     echo
-    exit 1
+    return 1
   fi
 
-  local login=`whoami`
-  local keyfile=`getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa
-
-  ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
-      -2 -i "${keyfile}" -l "${login}" "${ip}" "${*:2}"
+  eval "${1}=\${container}"
+  return 0
 }
 
-do_start() {
+read_not_running_container() {
+  if [ ${#} -ne 2 ] || [ -z "${1}" ]; then
+    return 1
+  fi
+
   build_container_status
+
+  if [ ${#containers_all[@]} -eq 0 ]; then
+    echo -e "qlxc: ${RED}You have no containers deployed${NOCOLOR}"
+    return 1
+  fi
 
   local active_containers=()
 
@@ -345,19 +372,17 @@ do_start() {
     fi
   done
 
-  local container=
+  local container=""
 
-  if [ ${#} -eq 1 ]; then
-    if is_digit "${1}" && [ ${1} -ge 0 ] && [ ! -z "${active_containers[${1}]}" ]; then
-      container=${active_containers[${1}]}
+  if is_digit "${2}" && [ ${2} -ge 0 ] && [ ! -z "${active_containers[${2}]}" ]; then
+    container=${active_containers[${2}]}
+  elif [ ! -z "${2}" ]; then
+    if ! does_container_exist "${2}"; then
+      echo -e "qlxc: ${RED}Container \"${2}\" does not exist${NOCOLOR}"
+    elif is_container_running "${2}"; then
+      echo -e "qlxc: ${RED}Container \"${2}\" is already running${NOCOLOR}"
     else
-      if ! does_container_exist "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} does not exist${NOCOLOR}"
-      elif is_container_running "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} is already running${NOCOLOR}"
-      else
-        container=${active_containers[${1}]}
-      fi
+      container=${active_containers[${2}]}
     fi
   fi
 
@@ -373,62 +398,76 @@ do_start() {
       fi
     done
     echo
+    return 1
+  fi
+
+  eval "${1}=\${container}"
+  return 0
+}
+
+do_ssh() {
+  if ! read_running_container c "${1}"; then
     exit 1
   fi
 
-  if sudo lxc-start -d -n ${container} -f /etc/lxc/${container}.conf; then
-    echo -e "qlxc: start: ${BLUE}${container}${NOCOLOR} container started succesffuly"
+  local login=`whoami`
+  local keyfile=`getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa
+
+  ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
+      -2 -i "${keyfile}" -l "${login}" "$(get_container_ip ip ${c}; echo ${ip})" "${*:2}"
+}
+
+do_start() {
+  if ! read_not_running_container c "${1}"; then
+    exit 1
+  fi
+
+  if sudo lxc-start -d -n "${c}" -f "/etc/lxc/${c}.conf"; then
+    echo -e "qlxc: start: \"${c}\" container started succesffuly"
   else
-    echo -e "qlxc: start: ${RED}Failed to start ${container} container${NOCOLOR}"
+    echo -e "qlxc: start: ${RED}Failed to start \"${c}\" container${NOCOLOR}"
   fi
 }
 
 do_stop() {
-  build_container_status
-
-  local active_containers=()
-
-  for c in ${containers_all[@]}; do
-    if is_container_running "${c}"; then
-      active_containers+=( "${c}" )
-    fi
-  done
-
-  local container=
-
-  if [ ${#} -eq 1 ]; then
-    if is_digit "${1}" && [ ${1} -ge 0 ] && [ ! -z "${active_containers[${1}]}" ]; then
-      container=${active_containers[${1}]}
-    else
-      if ! does_container_exist "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} does not exist${NOCOLOR}"
-      elif ! is_container_running "${1}"; then
-        echo -e "qlxc: ssh: ${RED}Container ${1} is not running${NOCOLOR}"
-      else
-        container=${active_containers[${1}]}
-      fi
-    fi
-  fi
-
-  if [ -z "${container}" ]; then
-    local i=0
-    echo
-    for c in ${containers_all[@]}; do
-      if ! is_container_running "${c}"; then
-        echo -e "      ${BLACK}${c} (not running)${NOCOLOR}"
-      else
-        echo -e "  ${YELLOW}[${i}]${NOCOLOR} ${c}"
-        let i++
-      fi
-    done
-    echo
+  if ! read_running_container c "${1}"; then
     exit 1
   fi
 
-  if sudo lxc-stop -n ${container}; then
-    echo -e "qlxc: start: ${BLUE}${container}${NOCOLOR} container stopped succesffuly"
+  if sudo lxc-stop -n ${c}; then
+    echo -e "qlxc: stop: \"${c}\" container stopped succesffuly"
   else
-    echo -e "qlxc: start: ${RED}Failed to stop ${container} container${NOCOLOR}"
+    echo -e "qlxc: stop: ${RED}Failed to stop \"${c}\" container${NOCOLOR}"
+  fi
+}
+
+do_rm() {
+  if ! read_not_running_container c "${1}"; then
+    exit 1
+  fi
+
+  local rootfs="`dirname $(readlink -f /etc/lxc/${c}.conf)`/${c}"
+
+  if mount 2>&1 | grep ${rootfs}; then
+    echo -e "qlxc: rm: ${RED}There seems to be filesystems mounted under \"${c}\" container's rootfs${NOCOLOR}"
+    exit 1
+  fi
+
+  echo -e "Removing container ${RED}${c}${NOCOLOR} - the following paths will be wiped out:"
+  echo
+  echo -e "  ${RED}/etc/lxc/${c}.conf${NOCOLOR}"
+  echo -e "  ${RED}$(readlink -f /etc/lxc/${c}.conf)${NOCOLOR}"
+  echo -e "  ${RED}${rootfs}/*${NOCOLOR}"
+  echo
+
+  count_down 10
+
+  echo
+
+  if sudo rm -rf "$(readlink -f /etc/lxc/${c}.conf)" "/etc/lxc/${c}.conf" "${rootfs}"; then
+    echo -e "qlxc: rm: \"${c}\" container removed succesffuly"
+  else
+    echo -e "qlxc: rm: ${RED}Failed to remove \"${c}\" container${NOCOLOR}"
   fi
 }
 
