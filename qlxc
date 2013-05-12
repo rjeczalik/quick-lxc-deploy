@@ -262,7 +262,7 @@ build_container_status() {
 }
 
 does_container_exist() {
-  if [ ! -z "${1}" ] && grep "${1}" <(echo ${containers_all[@]}) &>/dev/null; then
+  if [ ! -z "${1}" ] && grep -E "^${1}\$" <(echo ${containers_all[@]} | tr ' ' '\n') &>/dev/null; then
     return 0
   else
     return 1
@@ -270,7 +270,7 @@ does_container_exist() {
 }
 
 is_container_running() {
-  if [ ! -z "${1}" ] && grep "${1}" <(echo ${containers_started[@]}) &>/dev/null; then
+  if [ ! -z "${1}" ] && grep -E "^${1}\$" <(echo ${containers_started[@]} | tr ' ' '\n') &>/dev/null; then
     return 0
   else
     return 1
@@ -282,7 +282,7 @@ get_container_ip() {
     return 1
   fi
 
-  local ip_idx=`grep -n "${2}" <(echo ${containers_started[@]} | tr ' ' '\n') |
+  local ip_idx=`grep -nE "^${2}\$" <(echo ${containers_started[@]} | tr ' ' '\n') |
                 perl -ne '/^(\d+)\:.*/&&print int($1)-1'`
 
   if [ -z "${ip_idx}" ] || [ -z "${containers_started_ip[${ip_idx}]}" ] ||
@@ -322,12 +322,12 @@ read_running_container() {
   elif [ ! -z "${2}" ]; then
     if ! does_container_exist "${2}"; then
       echo -e "qlxc: ${RED}Container \"${2}\" does not exist${NOCOLOR}"
-    elif ! get_container_ip ip "${c}"; then
+    elif ! get_container_ip ip "${2}"; then
       echo -e "qlxc: ${RED}Cannot determine an IP address of \"${2}\" container${NOCOLOR}"
     elif ! is_container_running "${2}"; then
       echo -e "qlxc: ${RED}Container \"${2}\" is not running${NOCOLOR}"
     else
-      container=${active_containers[${2}]}
+      container=${2}
     fi
   fi
 
@@ -453,7 +453,7 @@ do_rm() {
     exit 1
   fi
 
-  echo -e "Removing container ${RED}${c}${NOCOLOR} - the following paths will be wiped out:"
+  echo -e "Removing container ${RED}${c}${NOCOLOR} - the following files will be wiped out:"
   echo
   echo -e "  ${RED}/etc/lxc/${c}.conf${NOCOLOR}"
   echo -e "  ${RED}$(readlink -f /etc/lxc/${c}.conf)${NOCOLOR}"
