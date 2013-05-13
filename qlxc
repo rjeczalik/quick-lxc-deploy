@@ -28,7 +28,7 @@ die_usage() {
 }
 
 load_config() {
-  for c in {/etc/,~/,${src}/}.{quick-lxc-deploy,qlxc}.conf; do
+  for c in {/etc/,${HOME}/,${src}/}.{quick-lxc-deploy,qlxc}.conf; do
     if [ -f "${c}" ]; then
       source "${c}"
       if [ ! -z "${PACKAGES}" ] && [ ! -z "${CACHE_DIR}" ] &&
@@ -41,6 +41,7 @@ load_config() {
             fi
           fi
         done
+        break
       else
         echo -e "quick-lxc-deploy: ${RED}${c}: invalid configuration file!${NOCOLOR}"
         exit 1
