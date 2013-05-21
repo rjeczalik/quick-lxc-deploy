@@ -220,15 +220,14 @@ EOF"
       sudo sed -i -e's/^6:23:respawn/#6:23:respawn/g' ${rootfs}/etc/inittab
     fi
     sudo ln -sf ${DEPLOY_DIR}/${containername}.conf /etc/lxc/${containername}.conf
-    sudo lxc-start -d -n ${containername} -f /etc/lxc/${containername}.conf
-    sleep 15 # lolwut
     local uid=`id -u ${USER}`
-    sudo ${src}/lxcssh ${containername} "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} -G sudo ${USER}"
+    sudo chroot ${rootfs} /bin/bash -c "groupadd -g ${uid} ${USER}; useradd -r -s /bin/bash -d /home/${USER} -g ${uid} -u ${uid} -G sudo ${USER}"
     sudo bash -c "cat >>${rootfs}/etc/sudoers <<EOF
 ${USER} ALL=(ALL) NOPASSWD: ALL
 EOF"
   else
-    echo -e "quick-lxc-deploy: ${RED}Directory ${rootfs} already exist!${NOCOLOR}"
+    echo -e "qlxc: ${RED}Directory \"${rootfs}\" already exist - deploy is cancelled${NOCOLOR}"
+    exit 1
   fi
 
   if [ `grep -cE '^RUN' /etc/default/lxc` -eq 0 ]; then
@@ -527,6 +526,7 @@ main() {
       die_usage
       ;;
   esac
+  exit 0
 }
 
 main ${*}
