@@ -429,7 +429,7 @@ do_ssh() {
   local login=`whoami`
   local keyfile=`getent passwd ${login} | cut -d: -f6`/.ssh/lxc_rsa
 
-  ssh -oStrictHostKeyChecking=no -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
+  ssh -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oPasswordAuthentication=no -oChallengeResponseAuthentication=no -oPreferredAuthentications=publickey \
       -2 -i "${keyfile}" -l "${login}" "$(get_container_ip ip ${c}; echo ${ip})" "${*:2}"
 }
 
