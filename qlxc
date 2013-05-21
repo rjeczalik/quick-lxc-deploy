@@ -93,6 +93,7 @@ update_distro_specific_configuration() {
       return 0
       ;;
     *)
+      echo -e "qlxc: ${RED}Unknown distro \"${1}\"${NOCOLOR}"
       return 1
       ;;
   esac
