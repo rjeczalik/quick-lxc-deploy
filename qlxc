@@ -87,7 +87,7 @@ update_distro_specific_configuration() {
       eval "${3}=${PACKAGES},isc-dhcp-client"
       return 0
       ;;
-    "hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring")
+    "hardy" | "lucid" | "natty" | "oneiric" | "precise" | "quantal" | "raring" | "saucy")
       eval "${2}=http://archive.ubuntu.com/ubuntu"
       eval "${3}=${PACKAGES},isc-dhcp-client"
       return 0
